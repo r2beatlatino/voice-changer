@@ -21,6 +21,12 @@ GTCRN_MODEL = os.path.join(MODEL_DIR, "gtcrn_simple.onnx")
 SILERO_MODEL = os.path.join(MODEL_DIR, "silero_vad.onnx")
 
 
+# Silero's confidence drops on quiet input, so it hears a level-normalised copy.
+VAD_TARGET_PEAK = 0.5
+VAD_MAX_GAIN = 16.0  # +24 dB
+VAD_RELEASE_S = 3.0
+
+
 @dataclass
 class ConditionerResult:
     audio: np.ndarray  # float32, 16 kHz, [-1, 1]
@@ -34,6 +40,7 @@ class InputConditioner:
         self.vad = None
         self.gate_open = False
         self.hangover_left = 0.0
+        self.vad_level = 0.0
         self._load()
 
     def _load(self):
@@ -57,6 +64,19 @@ class InputConditioner:
             self.vad.reset()
         self.gate_open = False
         self.hangover_left = 0.0
+        self.vad_level = 0.0
+
+    def _vad_input(self, audio: np.ndarray) -> np.ndarray:
+        """Copy of the chunk scaled towards VAD_TARGET_PEAK. Only the VAD hears it."""
+        peak = float(np.max(np.abs(audio))) if audio.size > 0 else 0.0
+        if peak >= self.vad_level:
+            self.vad_level = peak
+        else:
+            # slow release so pauses between words don't pump the gain up
+            decay = np.exp(-(audio.shape[0] / 16000.0) / VAD_RELEASE_S)
+            self.vad_level = max(peak, self.vad_level * decay)
+        gain = np.clip(VAD_TARGET_PEAK / max(self.vad_level, 1e-6), 1.0, VAD_MAX_GAIN)
+        return np.clip(audio * gain, -1.0, 1.0)
 
     def process(
         self,
@@ -76,7 +96,7 @@ class InputConditioner:
         if not vad or self.vad is None:
             return ConditionerResult(audio, 1.0, 1.0)
 
-        prob = self.vad.process(audio)
+        prob = self.vad.process(self._vad_input(audio))
         chunk_ms = audio.shape[0] / 16.0
         # hysteresis: harder to open than to stay open, so the gate doesn't chatter mid-word
         if prob >= vad_threshold or (self.gate_open and prob >= vad_threshold - 0.15):

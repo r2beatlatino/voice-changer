@@ -21,8 +21,8 @@ class RVCSettings:
     denoise: int = 1  # 0:off, 1:GTCRN
     denoiseStrength: float = 1.0  # 0.0 (raw mic) .. 1.0 (fully denoised)
     vad: int = 1  # 0:off, 1:Silero VAD gate
-    vadThreshold: float = 0.5
-    vadHangoverMs: int = 300  # keep the gate open this long after speech ends
+    vadThreshold: float = 0.3
+    vadHangoverMs: int = 500  # keep the gate open this long after speech ends
     f0Stabilize: int = 1  # 0:off, 1:remove pitch blips, gaps and octave jumps
 
     speakers: dict[str, int] = field(default_factory=lambda: {})

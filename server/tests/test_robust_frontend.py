@@ -93,6 +93,25 @@ class TestConditioner:
         assert gates[:3] == [1.0, 1.0, 1.0]
         assert gates[-1] == 0.0
 
+    def test_vad_hears_quiet_input_louder_but_output_is_untouched(self):
+        c = InputConditioner()
+        quiet = tone(0.1, amp=0.05)
+        boosted = c._vad_input(quiet)
+        assert np.abs(boosted).max() == pytest.approx(0.5, rel=0.01)
+        r = c.process(quiet, False, 1.0, True, 0.3, 500)
+        np.testing.assert_array_equal(r.audio, quiet)
+
+    def test_vad_gain_is_capped_for_near_silence(self):
+        c = InputConditioner()
+        hiss = tone(0.1, amp=0.001)
+        assert np.abs(c._vad_input(hiss)).max() <= 0.001 * 16.0 + 1e-6
+
+    def test_vad_gain_releases_slowly_in_pauses(self):
+        c = InputConditioner()
+        c._vad_input(tone(0.1, amp=0.4))
+        # a 100 ms pause right after loud speech should not be boosted to full scale
+        assert np.abs(c._vad_input(tone(0.1, amp=0.01))).max() < 0.05
+
     def test_everything_off_is_passthrough(self):
         c = InputConditioner()
         x = np.random.default_rng(4).standard_normal(1600).astype(np.float32)

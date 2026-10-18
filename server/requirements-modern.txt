@@ -5,6 +5,12 @@
 #   pip install torch==2.7.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
 #   pip install -r requirements-modern.txt
 # CPU only: pip install -r requirements-modern.txt (pulls the default torch build)
+#
+# Windows notes:
+# - fairseq 0.12.2 does not install with pip >= 24.1 (invalid omegaconf metadata): use pip 24.0 in the venv.
+# - Without Visual C++ Build Tools, install fairseq with the environment variable READTHEDOCS=1 set;
+#   that skips its C extensions, which are only used for training.
+# - Ports 18802-18901 are often reserved by Hyper-V/WSL (WinError 10013); start with e.g. -p 18000.
 
 torch==2.7.1
 torchaudio==2.7.1
