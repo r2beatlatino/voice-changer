@@ -30,6 +30,8 @@ VAD_RELEASE_S = 3.0
 
 # Rumble below the voice (fans, AC, desk vibration) is often most of the noise energy and
 # GTCRN only partly removes it under speech. Nothing the model needs lives below 85 Hz.
+# It runs both before and after GTCRN: on a real recording, before-only left more rumble
+# (GTCRN cleans the band less once it is attenuated) and after-only thinned the voice.
 HIGHPASS_HZ = 85.0
 HIGHPASS_SOS = butter(4, HIGHPASS_HZ, btype="highpass", fs=16000, output="sos")
 
@@ -48,7 +50,7 @@ class InputConditioner:
         self.gate_open = False
         self.hangover_left = 0.0
         self.vad_level = 0.0
-        self.hp_state = np.zeros((HIGHPASS_SOS.shape[0], 2))
+        self.hp_state = np.zeros((2, HIGHPASS_SOS.shape[0], 2))
         # the denoiser and VAD keep streaming state, so overlapping requests would corrupt it
         self.lock = threading.Lock()
         self._load()
@@ -76,7 +78,7 @@ class InputConditioner:
             self.gate_open = False
             self.hangover_left = 0.0
             self.vad_level = 0.0
-            self.hp_state = np.zeros((HIGHPASS_SOS.shape[0], 2))
+            self.hp_state = np.zeros((2, HIGHPASS_SOS.shape[0], 2))
 
     def _vad_input(self, audio: np.ndarray) -> np.ndarray:
         """Copy of the chunk scaled towards VAD_TARGET_PEAK. Only the VAD hears it."""
@@ -89,6 +91,10 @@ class InputConditioner:
             self.vad_level = max(peak, self.vad_level * decay)
         gain = np.clip(VAD_TARGET_PEAK / max(self.vad_level, 1e-6), 1.0, VAD_MAX_GAIN)
         return np.clip(audio * gain, -1.0, 1.0)
+
+    def _highpass(self, audio: np.ndarray, stage: int) -> np.ndarray:
+        out, self.hp_state[stage] = sosfilt(HIGHPASS_SOS, audio, zi=self.hp_state[stage])
+        return out.astype(np.float32)
 
     def process(
         self,
@@ -104,10 +110,11 @@ class InputConditioner:
 
     def _process(self, audio, denoise, denoise_strength, vad, vad_threshold, vad_hangover_ms) -> ConditionerResult:
         if denoise:
-            audio, self.hp_state = sosfilt(HIGHPASS_SOS, audio, zi=self.hp_state)
-            audio = audio.astype(np.float32)
+            audio = self._highpass(audio, 0)
         if denoise and self.denoiser is not None:
             audio = self.denoiser.process(audio, denoise_strength)
+        if denoise:
+            audio = self._highpass(audio, 1)
         elif self.denoiser is not None:
             # keep the denoiser's state and delay line moving so switching it on is seamless
             self.denoiser.process(audio, 0.0)
