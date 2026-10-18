@@ -58,7 +58,10 @@ const AppStateWrapper = () => {
 
         const onClearCacheClicked = async () => {
             await removeDB();
-            await webDBRemove();
+            // voice-changer-js 1.0.2 doesn't export removeDB; without this guard the button throws
+            if (typeof webDBRemove === "function") {
+                await webDBRemove();
+            }
             location.reload();
         };
         const onReloadClicked = () => {

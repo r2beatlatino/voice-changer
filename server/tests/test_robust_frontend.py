@@ -112,6 +112,27 @@ class TestConditioner:
         # a 100 ms pause right after loud speech should not be boosted to full scale
         assert np.abs(c._vad_input(tone(0.1, amp=0.01))).max() < 0.05
 
+    def test_concurrent_calls_do_not_corrupt_state(self):
+        import threading
+
+        c = InputConditioner()
+        errors = []
+
+        def worker(n):
+            x = np.random.default_rng(n).standard_normal(n).astype(np.float32) * 0.1
+            try:
+                for _ in range(30):
+                    assert c.process(x, True, 1.0, True, 0.3, 500).audio.shape[0] == n
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=worker, args=(n,)) for n in (4438, 8192, 1600)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert errors == []
+
     def test_everything_off_is_passthrough(self):
         c = InputConditioner()
         x = np.random.default_rng(4).standard_normal(1600).astype(np.float32)

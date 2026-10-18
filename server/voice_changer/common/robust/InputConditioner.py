@@ -9,6 +9,7 @@ This runs on the server, so it covers both modes.
 """
 
 import os
+import threading
 from dataclasses import dataclass
 
 import numpy as np
@@ -41,6 +42,8 @@ class InputConditioner:
         self.gate_open = False
         self.hangover_left = 0.0
         self.vad_level = 0.0
+        # the denoiser and VAD keep streaming state, so overlapping requests would corrupt it
+        self.lock = threading.Lock()
         self._load()
 
     def _load(self):
@@ -58,13 +61,14 @@ class InputConditioner:
             logger.warning(f"[InputConditioner] VAD unavailable, continuing without it: {e}")
 
     def reset(self):
-        if self.denoiser is not None:
-            self.denoiser.reset()
-        if self.vad is not None:
-            self.vad.reset()
-        self.gate_open = False
-        self.hangover_left = 0.0
-        self.vad_level = 0.0
+        with self.lock:
+            if self.denoiser is not None:
+                self.denoiser.reset()
+            if self.vad is not None:
+                self.vad.reset()
+            self.gate_open = False
+            self.hangover_left = 0.0
+            self.vad_level = 0.0
 
     def _vad_input(self, audio: np.ndarray) -> np.ndarray:
         """Copy of the chunk scaled towards VAD_TARGET_PEAK. Only the VAD hears it."""
@@ -87,6 +91,10 @@ class InputConditioner:
         vad_threshold: float,
         vad_hangover_ms: float,
     ) -> ConditionerResult:
+        with self.lock:
+            return self._process(audio, denoise, denoise_strength, vad, vad_threshold, vad_hangover_ms)
+
+    def _process(self, audio, denoise, denoise_strength, vad, vad_threshold, vad_hangover_ms) -> ConditionerResult:
         if denoise and self.denoiser is not None:
             audio = self.denoiser.process(audio, denoise_strength)
         elif self.denoiser is not None:
