@@ -133,6 +133,17 @@ class TestConditioner:
             t.join()
         assert errors == []
 
+    def test_highpass_removes_rumble_but_keeps_voice(self):
+        def level_after(hz):
+            c = InputConditioner()
+            c.denoiser = None  # isolate the high-pass
+            x = tone(1.0, hz=hz, amp=0.3)
+            out = np.concatenate([c.process(x[i : i + 1600], True, 1.0, False, 0.3, 500).audio for i in range(0, len(x), 1600)])
+            return np.std(out[SR // 2 :]) / np.std(x[SR // 2 :])
+
+        assert level_after(40) < 0.1  # -20 dB
+        assert level_after(250) > 0.95
+
     def test_everything_off_is_passthrough(self):
         c = InputConditioner()
         x = np.random.default_rng(4).standard_normal(1600).astype(np.float32)
@@ -245,6 +256,7 @@ class TestRvcIntegration:
 
     def test_fade_out_when_speech_stops(self, rvc):
         rvc.settings.vad = 1
+        rvc.settings.vadThreshold = 1.0  # noise input must close the gate whatever the VAD scores it
         rvc.inputConditioner.gate_open = True
         rvc.inputConditioner.hangover_left = 0
         rvc.prevGate = 1.0

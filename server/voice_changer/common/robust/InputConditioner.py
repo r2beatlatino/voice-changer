@@ -13,6 +13,7 @@ import threading
 from dataclasses import dataclass
 
 import numpy as np
+from scipy.signal import butter, sosfilt
 from mods.log_control import VoiceChangaerLogger
 
 logger = VoiceChangaerLogger.get_instance().getLogger()
@@ -26,6 +27,11 @@ SILERO_MODEL = os.path.join(MODEL_DIR, "silero_vad.onnx")
 VAD_TARGET_PEAK = 0.5
 VAD_MAX_GAIN = 16.0  # +24 dB
 VAD_RELEASE_S = 3.0
+
+# Rumble below the voice (fans, AC, desk vibration) is often most of the noise energy and
+# GTCRN only partly removes it under speech. Nothing the model needs lives below 85 Hz.
+HIGHPASS_HZ = 85.0
+HIGHPASS_SOS = butter(4, HIGHPASS_HZ, btype="highpass", fs=16000, output="sos")
 
 
 @dataclass
@@ -42,6 +48,7 @@ class InputConditioner:
         self.gate_open = False
         self.hangover_left = 0.0
         self.vad_level = 0.0
+        self.hp_state = np.zeros((HIGHPASS_SOS.shape[0], 2))
         # the denoiser and VAD keep streaming state, so overlapping requests would corrupt it
         self.lock = threading.Lock()
         self._load()
@@ -69,6 +76,7 @@ class InputConditioner:
             self.gate_open = False
             self.hangover_left = 0.0
             self.vad_level = 0.0
+            self.hp_state = np.zeros((HIGHPASS_SOS.shape[0], 2))
 
     def _vad_input(self, audio: np.ndarray) -> np.ndarray:
         """Copy of the chunk scaled towards VAD_TARGET_PEAK. Only the VAD hears it."""
@@ -95,6 +103,9 @@ class InputConditioner:
             return self._process(audio, denoise, denoise_strength, vad, vad_threshold, vad_hangover_ms)
 
     def _process(self, audio, denoise, denoise_strength, vad, vad_threshold, vad_hangover_ms) -> ConditionerResult:
+        if denoise:
+            audio, self.hp_state = sosfilt(HIGHPASS_SOS, audio, zi=self.hp_state)
+            audio = audio.astype(np.float32)
         if denoise and self.denoiser is not None:
             audio = self.denoiser.process(audio, denoise_strength)
         elif self.denoiser is not None:

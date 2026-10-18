@@ -12,7 +12,7 @@ the browser's Sup1/Sup2 switches only apply to client audio.
 
 | Setting (UI) | Key | Default | What it does |
 |---|---|---|---|
-| Denoise checkbox | `denoise` | on | GTCRN speech enhancement on the input. Adds 32 ms of latency |
+| Denoise checkbox | `denoise` | on | 85 Hz high-pass (removes fan/AC/desk rumble) + GTCRN speech enhancement. Adds 32 ms of latency |
 | Denoise slider | `denoiseStrength` | 1.0 | Mix between raw mic (0) and fully denoised (1). Lower it if your voice sounds thin |
 | VAD checkbox | `vad` | on | Mutes the output, and skips inference, while you are not talking |
 | VAD slider | `vadThreshold` | 0.3 | Speech probability needed to open the gate. Raise it in loud rooms, lower it (or turn VAD off) if words get cut |
