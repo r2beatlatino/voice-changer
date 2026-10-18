@@ -32,6 +32,8 @@ matplotlib==3.9.2
 # 1.8+ ships its own OpenMP, which clashes with torch's on Windows and crashes the server
 # as soon as Index > 0. 1.7.4 tested on Windows/RTX 3090 with a real .index.
 faiss-cpu==1.7.4
+# optional "Strong" denoise mode (DeepFilterNet3); the weights download on first use
+deepfilternet==0.5.6
 torchcrepe==0.0.23
 torchfcpe==0.0.4
 librosa==0.10.2.post1

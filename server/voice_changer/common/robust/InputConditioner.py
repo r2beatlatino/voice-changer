@@ -46,6 +46,8 @@ class ConditionerResult:
 class InputConditioner:
     def __init__(self):
         self.denoiser = None
+        self.strong_denoiser = None  # DeepFilterNet3, loaded the first time it is asked for
+        self.strong_failed = False
         self.vad = None
         self.gate_open = False
         self.hangover_left = 0.0
@@ -73,6 +75,8 @@ class InputConditioner:
         with self.lock:
             if self.denoiser is not None:
                 self.denoiser.reset()
+            if self.strong_denoiser is not None:
+                self.strong_denoiser.reset()
             if self.vad is not None:
                 self.vad.reset()
             self.gate_open = False
@@ -104,14 +108,29 @@ class InputConditioner:
         vad: bool,
         vad_threshold: float,
         vad_hangover_ms: float,
+        strong: bool = False,
     ) -> ConditionerResult:
         with self.lock:
-            return self._process(audio, denoise, denoise_strength, vad, vad_threshold, vad_hangover_ms)
+            return self._process(audio, denoise, denoise_strength, vad, vad_threshold, vad_hangover_ms, strong)
 
-    def _process(self, audio, denoise, denoise_strength, vad, vad_threshold, vad_hangover_ms) -> ConditionerResult:
+    def _strong(self):
+        if self.strong_denoiser is None and not self.strong_failed:
+            try:
+                from voice_changer.common.robust.DfnDenoiser import DfnDenoiser
+
+                self.strong_denoiser = DfnDenoiser()
+                logger.info(f"[InputConditioner] DeepFilterNet3 loaded on {self.strong_denoiser.device}")
+            except (Exception, SystemExit) as e:  # df calls exit() when it can't fetch the weights
+                self.strong_failed = True
+                logger.warning(f"[InputConditioner] DeepFilterNet3 unavailable, using GTCRN: {e}")
+        return self.strong_denoiser
+
+    def _process(self, audio, denoise, denoise_strength, vad, vad_threshold, vad_hangover_ms, strong=False) -> ConditionerResult:
         if denoise:
             audio = self._highpass(audio, 0)
-        if denoise and self.denoiser is not None:
+        if denoise and strong and self._strong() is not None:
+            audio = self.strong_denoiser.process(audio, denoise_strength)
+        elif denoise and self.denoiser is not None:
             audio = self.denoiser.process(audio, denoise_strength)
         if denoise:
             audio = self._highpass(audio, 1)

@@ -206,6 +206,7 @@ class RVCr2(VoiceChangerModel):
             receivedData.astype(np.float32) / 32768.0,
             denoise=self.settings.denoise == 1,
             denoise_strength=self.settings.denoiseStrength,
+            strong=self.settings.denoiseStrong == 1,
             vad=self.settings.vad == 1,
             vad_threshold=self.settings.vadThreshold,
             vad_hangover_ms=self.settings.vadHangoverMs,

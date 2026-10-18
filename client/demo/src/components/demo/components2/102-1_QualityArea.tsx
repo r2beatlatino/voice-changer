@@ -126,6 +126,16 @@ export const QualityArea = (props: QualityAreaProps) => {
                     0.05,
                     (v) => update({ ...s, denoiseStrength: v }),
                 )}
+                <div className="config-sub-area-control">
+                    <div className="config-sub-area-control-title">Strong:</div>
+                    <div className="config-sub-area-control-field">
+                        <div className="config-sub-area-noise-container">
+                            <div className="config-sub-area-noise-checkbox-container">
+                                <input type="checkbox" checked={s.denoiseStrong == 1} disabled={s.denoise != 1} onChange={(e) => update({ ...s, denoiseStrong: e.target.checked ? 1 : 0 })} /> <span>DeepFilterNet3</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 {slider(
                     "VAD:",
                     s.vad,

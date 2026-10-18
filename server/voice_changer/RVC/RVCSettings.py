@@ -20,6 +20,7 @@ class RVCSettings:
     # noise robustness (server side, works in server-audio mode too)
     denoise: int = 1  # 0:off, 1:GTCRN
     denoiseStrength: float = 1.0  # 0.0 (raw mic) .. 1.0 (fully denoised)
+    denoiseStrong: int = 0  # 0:GTCRN, 1:DeepFilterNet3 (needs the deepfilternet package)
     vad: int = 1  # 0:off, 1:Silero VAD gate
     vadThreshold: float = 0.3
     vadHangoverMs: int = 500  # keep the gate open this long after speech ends
@@ -37,6 +38,7 @@ class RVCSettings:
         "rvcQuality",
         "silenceFront",
         "denoise",
+        "denoiseStrong",
         "vad",
         "vadHangoverMs",
         "f0Stabilize",

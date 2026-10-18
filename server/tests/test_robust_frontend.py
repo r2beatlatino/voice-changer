@@ -144,6 +144,30 @@ class TestConditioner:
         assert level_after(40) < 0.1  # -20 dB
         assert level_after(250) > 0.95
 
+    def test_strong_mode_uses_deepfilternet_when_loaded(self):
+        c = InputConditioner()
+        calls = []
+
+        class Fake:
+            def process(self, x, strength):
+                calls.append(len(x))
+                return x
+
+        c.strong_denoiser = Fake()
+        c.process(np.zeros(1600, dtype=np.float32), True, 1.0, False, 0.3, 500, strong=True)
+        assert calls == [1600]
+
+    def test_strong_mode_falls_back_to_gtcrn(self, monkeypatch):
+        import voice_changer.common.robust.DfnDenoiser as dfn_module
+
+        def broken(self):
+            raise SystemExit(1)  # what df does when it can't download the weights
+
+        monkeypatch.setattr(dfn_module.DfnDenoiser, "__init__", broken)
+        c = InputConditioner()
+        r = c.process(np.zeros(1600, dtype=np.float32), True, 1.0, False, 0.3, 500, strong=True)
+        assert r.audio.shape[0] == 1600
+
     def test_everything_off_is_passthrough(self):
         c = InputConditioner()
         x = np.random.default_rng(4).standard_normal(1600).astype(np.float32)
@@ -264,3 +288,21 @@ class TestRvcIntegration:
         assert rvc.pipeline.calls == 1
         assert abs(out[0]) > abs(out[-1])  # ramps down to silence
         assert abs(out[-1]) < 1e-6
+
+
+class TestDeepFilterNet:
+    @pytest.fixture(scope="class")
+    def dfn(self):
+        try:
+            from voice_changer.common.robust.DfnDenoiser import DfnDenoiser
+
+            return DfnDenoiser()
+        except (Exception, SystemExit) as e:  # package or model weights not available
+            pytest.skip(f"DeepFilterNet3 unavailable: {e}")
+
+    def test_output_length_and_noise_reduction(self, dfn):
+        dfn.reset()
+        noise = np.random.default_rng(8).standard_normal(2 * SR).astype(np.float32) * 0.05
+        out = run_chunks(dfn.process, noise, [1280, 1600, 777])
+        assert out.shape == noise.shape
+        assert np.std(out[SR // 2 :]) < 0.3 * np.std(noise[SR // 2 :])
