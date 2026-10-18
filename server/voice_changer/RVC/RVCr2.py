@@ -22,6 +22,7 @@ from voice_changer.RVC.pitchExtractor.PitchExtractorManager import PitchExtracto
 from voice_changer.RVC.pipeline.PipelineGenerator import createPipeline
 from voice_changer.RVC.deviceManager.DeviceManager import DeviceManager
 from voice_changer.RVC.pipeline.Pipeline import Pipeline
+from voice_changer.common.robust.InputConditioner import InputConditioner
 
 from Exceptions import (
     DeviceCannotSupportHalfPrecisionException,
@@ -52,6 +53,8 @@ class RVCr2(VoiceChangerModel):
         self.pitchf_buffer: PitchfInOut | None = None
         self.feature_buffer: FeatureInOut | None = None
         self.prevVol = 0.0
+        self.prevGate = 0.0
+        self.inputConditioner = InputConditioner()
         self.slotInfo = slotInfo
         # self.initialize()
 
@@ -198,6 +201,20 @@ class RVCr2(VoiceChangerModel):
         sola_search_frame = int((sola_search_frame / self.inputSampleRate) * 16000)
         extra_frame = int((self.settings.extraConvertSize / self.inputSampleRate) * 16000)
 
+        # denoise + voice activity gate, before pitch and embedding see the signal
+        conditioned = self.inputConditioner.process(
+            receivedData.astype(np.float32) / 32768.0,
+            denoise=self.settings.denoise == 1,
+            denoise_strength=self.settings.denoiseStrength,
+            vad=self.settings.vad == 1,
+            vad_threshold=self.settings.vadThreshold,
+            vad_hangover_ms=self.settings.vadHangoverMs,
+        )
+        receivedData = conditioned.audio * 32768.0
+        gate = conditioned.gate
+        prevGate = self.prevGate
+        self.prevGate = gate
+
         # 入力データ生成
         data = self.generate_input(receivedData, crossfade_frame, sola_search_frame, extra_frame)
 
@@ -210,6 +227,9 @@ class RVCr2(VoiceChangerModel):
 
         if vol < self.settings.silentThreshold:
             return np.zeros(convertSize).astype(np.int16) * np.sqrt(vol)
+        if gate == 0.0 and prevGate == 0.0:
+            # no speech: skip inference but keep the buffers rolling for when speech resumes
+            return np.zeros(convertSize).astype(np.int16)
 
         device = self.pipeline.device
 
@@ -221,6 +241,7 @@ class RVCr2(VoiceChangerModel):
         protect = self.settings.protect
 
         if_f0 = 1 if self.slotInfo.f0 else 0
+        self.pipeline.f0Stabilize = self.settings.f0Stabilize == 1
         embOutputLayer = self.slotInfo.embOutputLayer
         useFinalProj = self.slotInfo.useFinalProj
 
@@ -253,6 +274,9 @@ class RVCr2(VoiceChangerModel):
                     filter="kaiser_fast",
                 ),
             )
+            if gate != prevGate:
+                # fade in/out over the block instead of cutting
+                result = result * np.linspace(prevGate, gate, result.shape[0])
 
             return result
         except DeviceCannotSupportHalfPrecisionException as e:  # NOQA

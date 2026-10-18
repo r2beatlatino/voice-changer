@@ -1,4 +1,9 @@
+import os
 import sys
+
+# PyTorch >= 2.6 defaults torch.load to weights_only=True, which rejects fairseq/HuBERT
+# and older RVC checkpoints. Keep the previous behaviour (these are the user's own models).
+os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
 
 from distutils.util import strtobool
 from datetime import datetime

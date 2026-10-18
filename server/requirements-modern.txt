@@ -1,0 +1,38 @@
+# Updated dependency set (tested on Python 3.10 with torch 2.7.1).
+# Python 3.10 is required: fairseq 0.12.2 (HuBERT/ContentVec embedder) does not run on 3.11+.
+#
+# NVIDIA GPUs (RTX 20/30/40/50): install torch from the CUDA 12.8 index first, then the rest:
+#   pip install torch==2.7.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
+#   pip install -r requirements-modern.txt
+# CPU only: pip install -r requirements-modern.txt (pulls the default torch build)
+
+torch==2.7.1
+torchaudio==2.7.1
+numpy<2
+setuptools<70
+uvicorn==0.30.6
+pyOpenSSL==24.2.1
+fastapi==0.115.0
+python-multipart==0.0.12
+python-socketio==5.11.4
+websockets==13.1
+resampy==0.4.3
+onnxruntime-gpu==1.19.2; sys_platform != "darwin"
+onnxruntime==1.19.2; sys_platform == "darwin"
+onnx==1.17.0
+onnxsim==0.4.36
+scipy==1.13.1
+matplotlib==3.9.2
+faiss-cpu==1.8.0.post1
+torchcrepe==0.0.23
+torchfcpe==0.0.4
+librosa==0.10.2.post1
+gin==0.1.6
+gin_config==0.5.0
+einops==0.8.0
+local_attention==1.9.15
+sounddevice==0.5.1
+dataclasses_json==0.6.7
+fairseq==0.12.2
+pyworld==0.3.5
+soundfile==0.12.1
