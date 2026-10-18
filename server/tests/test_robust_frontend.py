@@ -216,6 +216,12 @@ class TestRvcIntegration:
             assert out is not None and out.shape[0] > 4800
         assert rvc.pipeline.calls == 5
 
+    def test_silent_block_matches_converted_block_length(self, rvc):
+        silent = rvc.inference(np.zeros(4800, dtype=np.float32), 1024, 576)
+        rvc.settings.vad = 0
+        voiced = rvc.inference((np.random.default_rng(7).standard_normal(4800) * 3000).astype(np.float32), 1024, 576)
+        assert silent.shape[0] == voiced.shape[0]
+
     def test_fade_out_when_speech_stops(self, rvc):
         rvc.settings.vad = 1
         rvc.inputConditioner.gate_open = True

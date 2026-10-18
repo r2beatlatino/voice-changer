@@ -225,11 +225,13 @@ class RVCr2(VoiceChangerModel):
         vol = data[4]
         outSize = data[5]
 
+        # silent blocks must be as long as converted ones, or the SOLA crossfade misaligns
+        silentSize = int(outSize * self.outputSampleRate / self.slotInfo.samplingRate)
         if vol < self.settings.silentThreshold:
-            return np.zeros(convertSize).astype(np.int16) * np.sqrt(vol)
+            return np.zeros(silentSize).astype(np.int16) * np.sqrt(vol)
         if gate == 0.0 and prevGate == 0.0:
             # no speech: skip inference but keep the buffers rolling for when speech resumes
-            return np.zeros(convertSize).astype(np.int16)
+            return np.zeros(silentSize).astype(np.int16)
 
         device = self.pipeline.device
 
