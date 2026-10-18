@@ -17,6 +17,14 @@ class RVCSettings:
     silenceFront: int = 1  # 0:off, 1:on
     modelSamplingRate: int = 48000
 
+    # noise robustness (server side, works in server-audio mode too)
+    denoise: int = 1  # 0:off, 1:GTCRN
+    denoiseStrength: float = 1.0  # 0.0 (raw mic) .. 1.0 (fully denoised)
+    vad: int = 1  # 0:off, 1:Silero VAD gate
+    vadThreshold: float = 0.5
+    vadHangoverMs: int = 300  # keep the gate open this long after speech ends
+    f0Stabilize: int = 1  # 0:off, 1:remove pitch blips, gaps and octave jumps
+
     speakers: dict[str, int] = field(default_factory=lambda: {})
     # isHalf: int = 1  # 0:off, 1:on
     # enableDirectML: int = 0  # 0:off, 1:on
@@ -28,6 +36,10 @@ class RVCSettings:
         "extraConvertSize",
         "rvcQuality",
         "silenceFront",
+        "denoise",
+        "vad",
+        "vadHangoverMs",
+        "f0Stabilize",
     ]
-    floatData = ["silentThreshold", "indexRatio", "protect"]
+    floatData = ["silentThreshold", "indexRatio", "protect", "denoiseStrength", "vadThreshold"]
     strData = ["f0Detector"]

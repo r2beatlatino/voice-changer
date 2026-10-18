@@ -18,6 +18,7 @@ from voice_changer.RVC.inferencer.OnnxRVCInferencer import OnnxRVCInferencer
 from voice_changer.RVC.inferencer.OnnxRVCInferencerNono import OnnxRVCInferencerNono
 
 from voice_changer.RVC.pitchExtractor.PitchExtractor import PitchExtractor
+from voice_changer.common.robust.PitchStabilizer import f0_to_coarse, stabilize_f0
 from voice_changer.utils.Timer import Timer2
 
 logger = VoiceChangaerLogger.get_instance().getLogger()
@@ -64,6 +65,7 @@ class Pipeline(object):
 
         self.sr = 16000
         self.window = 160
+        self.f0Stabilize = False
 
     def getPipelineInfo(self):
         inferencerInfo = self.inferencer.getInferencerInfo() if self.inferencer else {}
@@ -87,6 +89,11 @@ class Pipeline(object):
                 )
                 # pitch = pitch[:p_len]
                 # pitchf = pitchf[:p_len]
+                if self.f0Stabilize:
+                    if isinstance(pitchf, torch.Tensor):
+                        pitchf = pitchf.detach().cpu().numpy()
+                    pitchf = stabilize_f0(pitchf).astype(np.float32)
+                    pitch = f0_to_coarse(pitchf)
                 pitch = torch.tensor(pitch, device=self.device).unsqueeze(0).long()
                 pitchf = torch.tensor(pitchf, device=self.device, dtype=torch.float).unsqueeze(0)
             else:

@@ -126,6 +126,13 @@ export const ServerSettingKey = {
     silenceFront: "silenceFront",
     modelSlotIndex: "modelSlotIndex",
 
+    denoise: "denoise",
+    denoiseStrength: "denoiseStrength",
+    vad: "vad",
+    vadThreshold: "vadThreshold",
+    vadHangoverMs: "vadHangoverMs",
+    f0Stabilize: "f0Stabilize",
+
     useEnhancer: "useEnhancer",
     useDiff: "useDiff",
     // "useDiffDpm": "useDiffDpm",
@@ -187,6 +194,13 @@ export type VoiceChangerServerSetting = {
     silenceFront: number; // 0:off, 1:on
     modelSamplingRate: ModelSamplingRate; // 32000,40000,48000
     modelSlotIndex: number | StaticModel;
+
+    denoise: number; // RVC, server-side noise suppression 0:off, 1:GTCRN
+    denoiseStrength: number; // RVC, 0.0-1.0
+    vad: number; // RVC, voice activity gate 0:off, 1:on
+    vadThreshold: number; // RVC, 0.0-1.0
+    vadHangoverMs: number; // RVC
+    f0Stabilize: number; // RVC, 0:off, 1:on
 
     useEnhancer: number; // DDSP-SVC
     useDiff: number; // DDSP-SVC
@@ -420,6 +434,12 @@ export const DefaultServerSetting: ServerInfo = {
     modelSamplingRate: 48000,
     silenceFront: 1,
     modelSlotIndex: 0,
+    denoise: 1,
+    denoiseStrength: 1.0,
+    vad: 1,
+    vadThreshold: 0.5,
+    vadHangoverMs: 300,
+    f0Stabilize: 1,
     sampleModels: [],
     gpus: [],
 

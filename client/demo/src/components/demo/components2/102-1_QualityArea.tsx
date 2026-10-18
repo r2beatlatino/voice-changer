@@ -93,6 +93,62 @@ export const QualityArea = (props: QualityAreaProps) => {
             </div>
         );
 
+        // server-side noise robustness (RVC). Works in server-audio mode too, unlike Sup1/Sup2.
+        const slider = (title: string, enabled: number, onToggle: (v: number) => void, value: number, min: number, max: number, step: number, onValue: (v: number) => void) => (
+            <div className="config-sub-area-control">
+                <div className="config-sub-area-control-title">{title}</div>
+                <div className="config-sub-area-control-field">
+                    <div className="config-sub-area-slider-control">
+                        <span className="config-sub-area-slider-control-kind">
+                            <input type="checkbox" checked={enabled == 1} onChange={(e) => onToggle(e.target.checked ? 1 : 0)} />
+                        </span>
+                        <span className="config-sub-area-slider-control-slider">
+                            <input type="range" className="config-sub-area-slider-control-slider" min={min} max={max} step={step} value={value} disabled={enabled != 1} onChange={(e) => onValue(Number(e.target.value))}></input>
+                        </span>
+                        <span className="config-sub-area-slider-control-val">{value}</span>
+                    </div>
+                </div>
+            </div>
+        );
+        const s = serverSetting.serverSetting;
+        const update = serverSetting.updateServerSettings;
+        const robust = webEdition ? (
+            <></>
+        ) : (
+            <>
+                {slider(
+                    "Denoise:",
+                    s.denoise,
+                    (v) => update({ ...s, denoise: v }),
+                    s.denoiseStrength,
+                    0,
+                    1,
+                    0.05,
+                    (v) => update({ ...s, denoiseStrength: v }),
+                )}
+                {slider(
+                    "VAD:",
+                    s.vad,
+                    (v) => update({ ...s, vad: v }),
+                    s.vadThreshold,
+                    0.1,
+                    0.9,
+                    0.05,
+                    (v) => update({ ...s, vadThreshold: v }),
+                )}
+                <div className="config-sub-area-control">
+                    <div className="config-sub-area-control-title">F0 Fix:</div>
+                    <div className="config-sub-area-control-field">
+                        <div className="config-sub-area-noise-container">
+                            <div className="config-sub-area-noise-checkbox-container">
+                                <input type="checkbox" checked={s.f0Stabilize == 1} onChange={(e) => update({ ...s, f0Stabilize: e.target.checked ? 1 : 0 })} /> <span>on</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </>
+        );
+
         return (
             <div className="config-sub-area">
                 <div className="config-sub-area-control">
@@ -149,6 +205,7 @@ export const QualityArea = (props: QualityAreaProps) => {
                 </div>
                 {f0Det}
                 {threshold}
+                {robust}
             </div>
         );
     }, [serverSetting.serverSetting, setting, serverSetting.updateServerSettings, setVoiceChangerClientSetting]);
