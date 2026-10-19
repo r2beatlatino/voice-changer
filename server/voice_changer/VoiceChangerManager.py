@@ -47,6 +47,24 @@ class VoiceChangerManagerSettings:
     )
 
 
+# Remembered per voice (model slot), so a restart or switching voices doesn't lose them.
+# RVC and LLVC share the noise-robustness keys; a model ignores keys it doesn't have.
+SAVE_ITEM_PER_VOICE = [
+    "tran",
+    "indexRatio",
+    "protect",
+    "dstId",
+    "denoise",
+    "denoiseStrength",
+    "denoiseStrong",
+    "vad",
+    "vadThreshold",
+    "vadHangoverMs",
+    "f0Stabilize",
+    "f0Floor",
+]
+
+
 class VoiceChangerManager(ServerDeviceCallbacks):
     _instance = None
 
@@ -114,7 +132,20 @@ class VoiceChangerManager(ServerDeviceCallbacks):
         saveItem.extend(saveItemForAllVoiceChanger)
         if key in saveItem:
             self.stored_setting[key] = val
-            json.dump(self.stored_setting, open(STORED_SETTING_FILE, "w"))
+            self._write_stored_setting()
+        elif key in SAVE_ITEM_PER_VOICE and getattr(self, "voiceChanger", None) is not None:
+            voices = self.stored_setting.setdefault("voices", {})
+            voices.setdefault(str(self.settings.modelSlotIndex), {})[key] = val
+            self._write_stored_setting()
+
+    def _write_stored_setting(self):
+        with open(STORED_SETTING_FILE, "w", encoding="utf-8") as f:
+            json.dump(self.stored_setting, f)
+
+    def _forget_voice_settings(self, slot):
+        """A new model in a slot starts from its own defaults, not the previous model's."""
+        if self.stored_setting.get("voices", {}).pop(str(slot), None) is not None:
+            self._write_stored_setting()
 
     def _get_gpuInfos(self):
         devCount = torch.cuda.device_count()
@@ -137,6 +168,7 @@ class VoiceChangerManager(ServerDeviceCallbacks):
             # サンプルダウンロード
             logger.info(f"[Voice Changer] sample download...., {params}")
             downloadSample(self.params.sample_mode, params.sampleId, self.params.model_dir, params.slot, params.params)
+            self._forget_voice_settings(params.slot)
             self.modelSlotManager.getAllSlotInfo(reload=True)
             info = {"status": "OK"}
             return info
@@ -149,6 +181,7 @@ class VoiceChangerManager(ServerDeviceCallbacks):
             )
             if os.path.isdir(slotDir):
                 shutil.rmtree(slotDir)
+            self._forget_voice_settings(params.slot)
 
             for file in params.files:
                 logger.info(f"FILE: {file}")
@@ -347,10 +380,14 @@ class VoiceChangerManager(ServerDeviceCallbacks):
                     newVal = re.sub("^\d+", "", val)  # 先頭の数字を取り除く。
                 logger.info(f"[Voice Changer] model slot is changed {self.settings.modelSlotIndex} -> {newVal}")
                 self.generateVoiceChanger(newVal)
+                # set before replaying, so the per-voice values below are stored under the new voice
+                self.settings.modelSlotIndex = newVal
                 # キャッシュ設定の反映
-                for k, v in self.stored_setting.items():
-                    if k != "modelSlotIndex":
+                for k, v in list(self.stored_setting.items()):
+                    if k not in ("modelSlotIndex", "voices"):
                         self.update_settings(k, v)
+                for k, v in list(self.stored_setting.get("voices", {}).get(str(newVal), {}).items()):
+                    self.update_settings(k, v)
             else:
                 newVal = int(val)
 

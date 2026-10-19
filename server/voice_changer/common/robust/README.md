@@ -26,6 +26,10 @@ while the VAD gate is closed (it is a streaming model), it just hears silence.
 | F0 Fix | `f0Stabilize` | on | Removes pitch blips, bridges short dropouts and folds octave jumps |
 | — | `f0Floor` | on | Lifts frames more than about 7.5 semitones below your usual pitch (the median of the last few seconds) up an octave. Dropping the voice at the end of a phrase otherwise made that word come out an octave low |
 
+Each voice (model slot) remembers its own pitch, index, protect and noise settings in
+`stored_setting.json`, so they survive a restart. The "Perfil" menu sets the noise controls in
+one click: Casa tranquila (GTCRN, VAD 0.3), Con ruido (Strong, VAD 0.4), Mucho ruido (Strong, VAD 0.5).
+
 ## Models
 
 Both models are bundled in `models/` (MIT licensed, see the LICENSE files):
