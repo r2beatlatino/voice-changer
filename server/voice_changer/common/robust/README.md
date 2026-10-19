@@ -18,7 +18,7 @@ while the VAD gate is closed (it is a streaming model), it just hears silence.
 | Setting (UI) | Key | Default | What it does |
 |---|---|---|---|
 | Denoise checkbox | `denoise` | on | 85 Hz high-pass (removes fan/AC/desk rumble) + GTCRN speech enhancement. Adds 32 ms of latency |
-| Strong | `denoiseStrong` | off | Use DeepFilterNet3 instead of GTCRN: about 9 dB more noise removed on a real rumble recording, about 9 ms per block on an RTX 3090 (13-18 ms on CPU). Loads on first use (a short gap in the audio); falls back to GTCRN if `deepfilternet` or its weights are missing |
+| Strong | `denoiseStrong` | off | Use DeepFilterNet3 instead of GTCRN: about 9 dB more noise removed on a real rumble recording, about 9 ms per block on an RTX 3090 (13-18 ms on CPU). Preloaded in the background when a voice loads and shared between voices; `VC_DFN_MODEL_DIR` points it at bundled weights. Falls back to GTCRN if `deepfilternet` or its weights are missing |
 | Denoise slider | `denoiseStrength` | 1.0 | Mix between raw mic (0) and fully denoised (1). Lower it if your voice sounds thin |
 | VAD checkbox | `vad` | on | Mutes the output, and skips inference (RVC), while you are not talking |
 | VAD slider | `vadThreshold` | 0.3 | Speech probability needed to open the gate. Raise it in loud rooms, lower it (or turn VAD off) if words get cut |
@@ -37,6 +37,10 @@ behind the denoiser it recommends), and a pitch shift from the user's median pit
 female (280 Hz) or male (125 Hz) voice, rounded to the octave when within a semitone of it. It also
 flags a quiet or clipping mic, low rumble and speech-like background noise.
 `POST /convert_clip` converts the reading block by block so it can be heard before and after.
+
+RVC runs once when a voice loads and again on the first silent block at a new block size, and
+ONNX on CUDA uses `cudnn_conv_algo_search=HEURISTIC`. With the default exhaustive search the
+first block after a voice switch took 5.6 s on an RTX 3090; now it takes about 0.12 s.
 
 ## Models
 
