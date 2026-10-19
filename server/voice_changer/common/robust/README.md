@@ -24,6 +24,7 @@ while the VAD gate is closed (it is a streaming model), it just hears silence.
 | VAD slider | `vadThreshold` | 0.3 | Speech probability needed to open the gate. Raise it in loud rooms, lower it (or turn VAD off) if words get cut |
 | — | `vadHangoverMs` | 500 | How long the gate stays open after speech stops |
 | F0 Fix | `f0Stabilize` | on | Removes pitch blips, bridges short dropouts and folds octave jumps |
+| — | `f0Floor` | on | Lifts frames more than about 7.5 semitones below your usual pitch (the median of the last few seconds) up an octave. Dropping the voice at the end of a phrase otherwise made that word come out an octave low |
 
 ## Models
 

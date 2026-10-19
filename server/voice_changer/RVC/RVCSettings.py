@@ -25,6 +25,7 @@ class RVCSettings:
     vadThreshold: float = 0.3
     vadHangoverMs: int = 500  # keep the gate open this long after speech ends
     f0Stabilize: int = 1  # 0:off, 1:remove pitch blips, gaps and octave jumps
+    f0Floor: int = 1  # 0:off, 1:lift words dropped an octave below the usual pitch
 
     speakers: dict[str, int] = field(default_factory=lambda: {})
     # isHalf: int = 1  # 0:off, 1:on
@@ -42,6 +43,7 @@ class RVCSettings:
         "vad",
         "vadHangoverMs",
         "f0Stabilize",
+        "f0Floor",
     ]
     floatData = ["silentThreshold", "indexRatio", "protect", "denoiseStrength", "vadThreshold"]
     strData = ["f0Detector"]

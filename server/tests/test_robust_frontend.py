@@ -14,7 +14,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from voice_changer.common.robust.GtcrnDenoiser import GtcrnDenoiser  # noqa: E402
 from voice_changer.common.robust.InputConditioner import GTCRN_MODEL, SILERO_MODEL, InputConditioner  # noqa: E402
-from voice_changer.common.robust.PitchStabilizer import f0_to_coarse, stabilize_f0  # noqa: E402
+from voice_changer.common.robust.PitchStabilizer import PitchFloor, f0_to_coarse, stabilize_f0  # noqa: E402
 from voice_changer.common.robust.SileroVad import SileroVad  # noqa: E402
 
 SR = 16000
@@ -241,6 +241,45 @@ class TestPitchStabilizer:
         expected[expected > 0] = (expected[expected > 0] - lo) * 254 / (hi - lo) + 1
         expected = np.rint(np.clip(expected, 1, 255)).astype(int)
         np.testing.assert_array_equal(f0_to_coarse(f0), expected)
+
+
+class TestPitchFloor:
+    def _warm(self, pf, hz=280.0):
+        for _ in range(PitchFloor.MIN_HISTORY):
+            pf(np.full(100, hz))
+
+    def test_lifts_a_word_dropped_an_octave(self):
+        pf = PitchFloor()
+        self._warm(pf)
+        f0 = np.full(100, 280.0)
+        f0[40:60] = 172.0  # the "seis" from a real recording, after tune +12
+        out = pf(f0)
+        np.testing.assert_allclose(out[40:60], 344.0)
+        np.testing.assert_allclose(out[:40], 280.0)
+
+    def test_keeps_normal_intonation(self):
+        pf = PitchFloor()
+        self._warm(pf)
+        f0 = np.geomspace(300, 200, 100)  # a falling phrase end, 6 semitones
+        np.testing.assert_allclose(pf(f0), f0)
+
+    def test_waits_for_the_usual_pitch(self):
+        pf = PitchFloor()
+        f0 = np.full(100, 150.0)
+        np.testing.assert_allclose(pf(f0), f0)
+
+    def test_streamed_buffer_is_not_lifted_twice(self):
+        pf = PitchFloor()
+        self._warm(pf)
+        f0 = np.full(100, 172.0)
+        once = pf(f0)
+        np.testing.assert_allclose(pf(once), once)
+
+    def test_unvoiced_frames_stay_unvoiced(self):
+        pf = PitchFloor()
+        self._warm(pf)
+        f0 = np.zeros(50)
+        assert pf(f0).max() == 0
 
 
 class _StubPipeline:

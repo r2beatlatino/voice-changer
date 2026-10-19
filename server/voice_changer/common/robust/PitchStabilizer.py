@@ -79,3 +79,39 @@ def stabilize_f0(
     out = np.zeros_like(f0)
     out[voiced] = np.power(2.0, logf[voiced])
     return out
+
+
+class PitchFloor:
+    """Lifts frames far below the speaker's usual pitch up an octave.
+
+    Dropping the voice at the end of a phrase can halve its pitch for a whole word (on a real
+    recording, "seis" at 82 Hz between words at 130-146 Hz). RVC copies pitch exactly, so that
+    word came out an octave below the rest, close to another speaker's voice. Normal intonation
+    stays well above RATIO and is left alone. It works per frame so it stays consistent across
+    streamed blocks; stabilize_f0's octave folding then evens out the edges.
+    """
+
+    RATIO = 0.65  # about 7.5 semitones below the usual pitch
+    HISTORY = 50  # blocks
+    MIN_HISTORY = 10
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.history: list[float] = []
+
+    def __call__(self, f0: np.ndarray) -> np.ndarray:
+        f0 = np.asarray(f0, dtype=np.float64).copy()
+        voiced = f0 > 0
+        if not voiced.any():
+            return f0
+        if len(self.history) >= self.MIN_HISTORY:
+            limit = self.RATIO * float(np.median(self.history))
+            # frames lifted earlier come back in the pitch buffer above the limit, so they are
+            # not lifted twice; anything below half the limit is more likely a detector error
+            low = voiced & (f0 < limit) & (f0 >= limit / 2)
+            f0[low] *= 2.0
+        self.history.append(float(np.median(f0[voiced])))
+        del self.history[: -self.HISTORY]
+        return f0

@@ -97,6 +97,8 @@ class RVCr2(VoiceChangerModel):
             self.prevVol = 0.0
             self.prevGate = 0.0
             self.inputConditioner.reset()
+            if hasattr(self.pipeline, "pitchFloor"):
+                self.pipeline.pitchFloor.reset()  # the warm-up noise is not the speaker's pitch
 
     def setSamplingRate(self, inputSampleRate, outputSampleRate):
         self.inputSampleRate = inputSampleRate
@@ -269,6 +271,7 @@ class RVCr2(VoiceChangerModel):
 
         if_f0 = 1 if self.slotInfo.f0 else 0
         self.pipeline.f0Stabilize = self.settings.f0Stabilize == 1
+        self.pipeline.f0Floor = self.settings.f0Floor == 1
         embOutputLayer = self.slotInfo.embOutputLayer
         useFinalProj = self.slotInfo.useFinalProj
 
