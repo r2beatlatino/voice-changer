@@ -83,7 +83,8 @@ class VoiceChangerManager(ServerDeviceCallbacks):
 
         self.serverDevice = ServerDevice(self)
 
-        thread = threading.Thread(target=self.serverDevice.start, args=())
+        # daemon: otherwise this audio loop keeps the process alive after shutdown, holding the port
+        thread = threading.Thread(target=self.serverDevice.start, args=(), daemon=True)
         thread.start()
 
         # 設定保存用情報

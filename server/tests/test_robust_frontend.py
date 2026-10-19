@@ -115,7 +115,7 @@ class TestConditioner:
     def test_concurrent_calls_do_not_corrupt_state(self):
         import threading
 
-        c = InputConditioner()
+        c = InputConditioner(preload_strong=False)
         errors = []
 
         def worker(n):
@@ -145,7 +145,7 @@ class TestConditioner:
         assert level_after(250) > 0.95
 
     def test_strong_mode_uses_deepfilternet_when_loaded(self):
-        c = InputConditioner()
+        c = InputConditioner(preload_strong=False)  # the real model must not replace the fake
         calls = []
 
         class Fake:

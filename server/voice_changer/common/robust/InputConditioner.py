@@ -8,6 +8,7 @@ client, so in server-audio mode the model used to receive the raw microphone sig
 This runs on the server, so it covers both modes.
 """
 
+import importlib.util
 import os
 import threading
 from dataclasses import dataclass
@@ -44,7 +45,7 @@ class ConditionerResult:
 
 
 class InputConditioner:
-    def __init__(self):
+    def __init__(self, preload_strong: bool = True):
         self.denoiser = None
         self.strong_denoiser = None  # DeepFilterNet3, loaded the first time it is asked for
         self.strong_failed = False
@@ -57,6 +58,10 @@ class InputConditioner:
         # the denoiser and VAD keep streaming state, so overlapping requests would corrupt it
         self.lock = threading.Lock()
         self._load()
+        # Loading DeepFilterNet3 holds the GIL for seconds (import + checkpoint), which stalled
+        # live audio when it was first loaded on demand. Start it now, while the model loads.
+        if preload_strong and importlib.util.find_spec("df") is not None:
+            self._strong()
 
     def _load(self):
         try:
