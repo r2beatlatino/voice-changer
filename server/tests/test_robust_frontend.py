@@ -167,6 +167,32 @@ class TestConditioner:
         c = InputConditioner()
         r = c.process(np.zeros(1600, dtype=np.float32), True, 1.0, False, 0.3, 500, strong=True)
         assert r.audio.shape[0] == 1600
+        c.strong_loader.join()
+        assert c.strong_failed and c.strong_denoiser is None
+
+    def test_strong_mode_loads_in_background(self, monkeypatch):
+        import time
+
+        import voice_changer.common.robust.DfnDenoiser as dfn_module
+
+        calls = []
+
+        def slow_init(self):
+            time.sleep(0.5)
+            self.device = "cpu"
+            self.reset()
+
+        monkeypatch.setattr(dfn_module.DfnDenoiser, "__init__", slow_init)
+        monkeypatch.setattr(dfn_module.DfnDenoiser, "process", lambda self, x, strength: calls.append(len(x)) or x)
+        c = InputConditioner()
+        x = np.zeros(1600, dtype=np.float32)
+        t0 = time.perf_counter()
+        c.process(x, True, 1.0, False, 0.3, 500, strong=True)
+        assert time.perf_counter() - t0 < 0.3  # GTCRN answers while the model loads
+        assert calls == []
+        c.strong_loader.join()
+        c.process(x, True, 1.0, False, 0.3, 500, strong=True)
+        assert calls == [1600]
 
     def test_everything_off_is_passthrough(self):
         c = InputConditioner()
@@ -306,3 +332,14 @@ class TestDeepFilterNet:
         out = run_chunks(dfn.process, noise, [1280, 1600, 777])
         assert out.shape == noise.shape
         assert np.std(out[SR // 2 :]) < 0.3 * np.std(noise[SR // 2 :])
+
+    def test_switching_in_after_push_matches_running_all_along(self, dfn):
+        x = np.random.default_rng(9).standard_normal(2 * SR).astype(np.float32) * 0.05
+        chunks = [x[i : i + 1600] for i in range(0, len(x), 1600)]
+        dfn.reset()
+        always = [dfn.process(c) for c in chunks]
+        dfn.reset()
+        for c in chunks[:10]:
+            dfn.push(c)
+        switched = [dfn.process(c) for c in chunks[10:]]
+        np.testing.assert_allclose(switched[0], always[10], atol=1e-4)

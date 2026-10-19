@@ -19,7 +19,8 @@ import torch
 class DfnDenoiser:
     SR = 16000
     CONTEXT_S = 0.5
-    LATENCY_SAMPLES = 480  # 30 ms: 2 lookahead hops + window of DeepFilterNet3
+    # 30 ms (2 lookahead hops + window) would do; 32 ms matches GTCRN so switching doesn't shift the signal
+    LATENCY_SAMPLES = 512
 
     def __init__(self):
         from df.enhance import enhance, init_df
@@ -35,6 +36,13 @@ class DfnDenoiser:
     def reset(self):
         self.buf = np.zeros(int(self.CONTEXT_S * self.SR) + self.LATENCY_SAMPLES, dtype=np.float32)
         self.dry_fifo = np.zeros(self.LATENCY_SAMPLES, dtype=np.float32)
+
+    def push(self, x: np.ndarray):
+        """Keep the window and delay line current without running the model, so switching to it is seamless."""
+        x = x.astype(np.float32)
+        keep = int(self.CONTEXT_S * self.SR) + self.LATENCY_SAMPLES
+        self.buf = np.concatenate([self.buf, x])[-max(keep, x.shape[0] + self.LATENCY_SAMPLES) :]
+        self.dry_fifo = np.concatenate([self.dry_fifo, x])[-self.LATENCY_SAMPLES :]
 
     def process(self, x: np.ndarray, strength: float = 1.0) -> np.ndarray:
         x = x.astype(np.float32)

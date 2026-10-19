@@ -48,6 +48,7 @@ class InputConditioner:
         self.denoiser = None
         self.strong_denoiser = None  # DeepFilterNet3, loaded the first time it is asked for
         self.strong_failed = False
+        self.strong_loader = None
         self.vad = None
         self.gate_open = False
         self.hangover_left = 0.0
@@ -113,30 +114,44 @@ class InputConditioner:
         with self.lock:
             return self._process(audio, denoise, denoise_strength, vad, vad_threshold, vad_hangover_ms, strong)
 
-    def _strong(self):
-        if self.strong_denoiser is None and not self.strong_failed:
-            try:
-                from voice_changer.common.robust.DfnDenoiser import DfnDenoiser
+    def _load_strong(self):
+        try:
+            from voice_changer.common.robust.DfnDenoiser import DfnDenoiser
 
-                self.strong_denoiser = DfnDenoiser()
-                logger.info(f"[InputConditioner] DeepFilterNet3 loaded on {self.strong_denoiser.device}")
-            except (Exception, SystemExit) as e:  # df calls exit() when it can't fetch the weights
-                self.strong_failed = True
-                logger.warning(f"[InputConditioner] DeepFilterNet3 unavailable, using GTCRN: {e}")
+            dfn = DfnDenoiser()
+            with self.lock:
+                self.strong_denoiser = dfn
+            logger.info(f"[InputConditioner] DeepFilterNet3 loaded on {dfn.device}")
+        except (Exception, SystemExit) as e:  # df calls exit() when it can't fetch the weights
+            self.strong_failed = True
+            logger.warning(f"[InputConditioner] DeepFilterNet3 unavailable, using GTCRN: {e}")
+
+    def _strong(self):
+        """DeepFilterNet3 once loaded. Loading takes about a second, so it happens in the
+        background and GTCRN keeps working until it is ready."""
+        if self.strong_denoiser is None and not self.strong_failed and self.strong_loader is None:
+            self.strong_loader = threading.Thread(target=self._load_strong, daemon=True)
+            self.strong_loader.start()
         return self.strong_denoiser
 
     def _process(self, audio, denoise, denoise_strength, vad, vad_threshold, vad_hangover_ms, strong=False) -> ConditionerResult:
         if denoise:
             audio = self._highpass(audio, 0)
-        if denoise and strong and self._strong() is not None:
-            audio = self.strong_denoiser.process(audio, denoise_strength)
-        elif denoise and self.denoiser is not None:
-            audio = self.denoiser.process(audio, denoise_strength)
+        use_strong = denoise and strong and self._strong() is not None
+        # the denoiser not in use still hears the input, so switching between them is seamless
+        if self.strong_denoiser is not None:
+            if use_strong:
+                strong_out = self.strong_denoiser.process(audio, denoise_strength)
+            else:
+                self.strong_denoiser.push(audio)
+        if self.denoiser is not None:
+            gtcrn_out = self.denoiser.process(audio, denoise_strength if denoise and not use_strong else 0.0)
+            if denoise and not use_strong:
+                audio = gtcrn_out
+        if use_strong:
+            audio = strong_out
         if denoise:
             audio = self._highpass(audio, 1)
-        elif self.denoiser is not None:
-            # keep the denoiser's state and delay line moving so switching it on is seamless
-            self.denoiser.process(audio, 0.0)
 
         if not vad or self.vad is None:
             return ConditionerResult(audio, 1.0, 1.0)

@@ -132,7 +132,8 @@ def localServer(logLevel: str = "critical", key_path: str | None = None, cert_pa
             f"{os.path.basename(__file__)[:-3]}:app_socketio",
             host=HOST,
             port=int(PORT),
-            reload=False if hasattr(sys, "_MEIPASS") else True,
+            # the reload watcher scanned the whole venv nonstop and left orphans holding the port
+            reload=False,
             ssl_keyfile=key_path,
             ssl_certfile=cert_path,
             log_level=logLevel,
