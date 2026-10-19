@@ -12,6 +12,25 @@
 [マレー語](/docs_i18n/README_ms.md)/
 [ロシア語](/docs_i18n/README_ru.md) \*日本語以外は機械翻訳です。
 
+## Esta versión (r2beatlatino/voice-changer)
+
+Basada en w-okada voice-changer, con mejoras para hablar en tiempo real con un micrófono en una
+habitación con ruido. Probada con RVC en una RTX 3090.
+
+- **Limpieza de ruido:** GTCRN y, en modo «Fuerte», DeepFilterNet3. Un filtro de 85 Hz quita el retumbe.
+- **Detector de voz:** se calla cuando no hablas, sin cortar palabras aunque el micrófono suene bajo.
+- **Voz más clara:** más contexto por defecto (`extraConvertSize` 65536) y un «suelo de tono» que
+  sube una octava las palabras dichas con la voz caída.
+- **Ajustes por voz:** cada voz recuerda su tono y su limpieza. El menú «Perfil» lo ajusta en un clic.
+- **Asistente:** con 10 s de silencio y 15 s leyendo, elige la limpieza, el detector y el tono.
+- **Pantalla fácil:** elige una voz, pulsa «Encender» y ajusta tres controles. La pantalla completa
+  sigue en «Modo avanzado».
+- **Programa portátil para Windows:** `VoiceChanger.exe` con su propia ventana, sin instalar nada.
+  Se arma con [`packaging/windows`](packaging/windows/README.md). Instrucciones para el usuario:
+  [`LEEME.txt`](packaging/windows/LEEME.txt).
+
+Pruebas del servidor: `cd server && python -m pytest tests -q`.
+
 ## VCClient
 
 VCClient は、AI を用いてリアルタイム音声変換を行うソフトウェアです。
