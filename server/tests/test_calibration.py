@@ -73,6 +73,16 @@ def test_strong_only_when_installed(speech):
     rum = _rumble(10, 0.01)
     r = calibrate(rum, speech + np.resize(rum, speech.shape), strong_available=False)
     assert r["settings"]["denoiseStrong"] == 0
+    assert "strong_missing" in r["tips"]
+
+
+def test_strong_not_loaded_yet_keeps_vad_moderate(speech):
+    # without DeepFilterNet3 loaded the gate is measured behind GTCRN, which leaks rumble
+    rum = _rumble(10, 0.01)
+    r = calibrate(rum, speech + np.resize(rum, speech.shape), strong_available=True)
+    assert r["settings"]["denoiseStrong"] == 1
+    assert r["settings"]["vadThreshold"] <= 0.4
+    assert "speech_like_noise" not in r["tips"]
 
 
 def test_silence_instead_of_reading_is_reported():

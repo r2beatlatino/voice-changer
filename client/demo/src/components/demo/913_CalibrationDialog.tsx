@@ -20,6 +20,7 @@ const TIPS: { [key: string]: string } = {
     vad_cuts: "Incluso con el VAD poco estricto se cortaría parte de tu voz. Si notas palabras cortadas, apaga el VAD.",
     speech_like_noise: "El ruido de fondo se parece a una voz (tele, música u otras personas). El VAD lo dejará pasar a ratos.",
     no_pitch: "No pude medir tu tono. Repite el paso 2 leyendo en voz alta.",
+    strong_missing: "Tu cuarto tiene bastante ruido y la limpieza fuerte (Strong) no está instalada. Instala el paquete deepfilternet en el servidor para usarla.",
 };
 
 type Recording = { sampleRate: number; data: Float32Array };

@@ -131,9 +131,13 @@ def calibrate(noise: np.ndarray, voice: np.ndarray, target: str = "keep", strong
     if snr < 20:
         tips.append("noisy_room")
 
-    strong = strong_available and (snr < STRONG_BELOW_SNR_DB or _db(noise_rms) > STRONG_ABOVE_NOISE_DB)
+    noisy = snr < STRONG_BELOW_SNR_DB or _db(noise_rms) > STRONG_ABOVE_NOISE_DB
+    strong = strong_available and noisy
+    if noisy and not strong_available:
+        tips.append("strong_missing")
 
-    if strong and conditioner.strong_denoiser is not None:
+    behind_strong = strong and conditioner.strong_denoiser is not None
+    if behind_strong:
         voice_probs, _ = _condition(conditioner, voice, strong=True)
         noise_probs, _ = _condition(conditioner, noise, strong=True)
     everything = np.ones(noise_probs.shape[0], dtype=bool)
@@ -142,9 +146,13 @@ def calibrate(noise: np.ndarray, voice: np.ndarray, target: str = "keep", strong
         if _gate_pass(noise_probs, everything, t) <= MAX_NOISE_PASS:
             threshold = t
             break
+    if strong and not behind_strong:
+        # Measured behind GTCRN, which lets rumble through that Silero takes for speech; behind
+        # Strong (on a real recording) none of it reached the gate, so don't go stricter than 0.4.
+        threshold = min(threshold, 0.4)
     voice_pass = _gate_pass(voice_probs, speech, threshold)
     noise_pass = _gate_pass(noise_probs, everything, threshold)
-    if noise_pass > MAX_NOISE_PASS:
+    if noise_pass > MAX_NOISE_PASS and not (strong and not behind_strong):
         tips.append("speech_like_noise")
     if voice_pass < MIN_SPEECH_PASS:
         tips.append("vad_cuts")
