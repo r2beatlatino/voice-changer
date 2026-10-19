@@ -1,0 +1,48 @@
+﻿CAMBIADOR DE VOZ — versión portátil
+====================================
+
+Qué es
+------
+Un cambiador de voz en tiempo real (basado en w-okada voice-changer, con mejoras para
+micrófonos con ruido). No hay que instalar nada: todo va dentro de esta carpeta.
+
+Qué necesitas
+-------------
+- Windows 10 u 11 de 64 bits.
+- Una tarjeta NVIDIA (RTX 2000/3000/4000/5000) con el driver actualizado (versión 570 o superior).
+  Sin tarjeta NVIDIA también arranca, pero va demasiado lento para hablar en tiempo real.
+- Unos 15 GB libres en el disco.
+- Internet la PRIMERA vez que lo abras: descarga los modelos base (~1.8 GB). Después ya no hace falta.
+- Microsoft Edge (viene con Windows). Si no lo tienes, se abre en tu navegador normal.
+
+Cómo usarlo
+-----------
+1. Descomprime la carpeta entera en un sitio tuyo: Documentos o el Escritorio.
+   NO la pongas en «Archivos de programa»: el programa guarda ahí tus voces y ajustes.
+2. Haz doble clic en «VoiceChanger.exe».
+3. Espera a que se abra la ventana (la primera vez tarda varios minutos por la descarga).
+4. En la ventana:
+   1) Elige una voz (o añade la tuya con «Añadir o cambiar voces»).
+   2) En «Micrófono y salida» elige tu micrófono (input) y tus auriculares (output).
+      Usa auriculares: con altavoces, el micrófono vuelve a captar la voz convertida.
+   3) Pulsa «Asistente: ajústalo por mí» para que ajuste solo el ruido y el tono
+      (10 segundos en silencio y 15 segundos leyendo).
+   4) Pulsa «Encender».
+5. Para apagarlo, cierra la ventana.
+
+Si algo va mal
+--------------
+- El registro está en: datos\registro_servidor.txt
+- Si Windows dice «Windows protegió su PC», pulsa «Más información» → «Ejecutar de todas formas»
+  (el programa no está firmado).
+- Si el micrófono no funciona, la primera vez la ventana pide permiso: pulsa «Permitir».
+
+Desinstalar
+-----------
+Borra la carpeta. No deja nada instalado en Windows.
+
+Licencias
+---------
+Ver la carpeta LICENCIAS. Los modelos base se descargan de sus fuentes originales la
+primera vez y tienen sus propias licencias (algunos GPL o de uso no comercial).
+Las voces que añadas son responsabilidad tuya: respeta los permisos de sus autores.
