@@ -78,14 +78,14 @@ class TestVad:
 
 class TestConditioner:
     def test_gate_stays_closed_on_silence(self):
-        c = InputConditioner()
+        c = InputConditioner(preload_strong=False)
         for _ in range(20):
             r = c.process(np.zeros(1600, dtype=np.float32), True, 1.0, True, 0.5, 300)
             assert r.audio.shape[0] == 1600
             assert r.gate == 0.0
 
     def test_gate_hangover(self):
-        c = InputConditioner()
+        c = InputConditioner(preload_strong=False)
         c.gate_open = True
         c.hangover_left = 300
         gates = [c.process(np.zeros(1600, dtype=np.float32), False, 1.0, True, 0.5, 300).gate for _ in range(6)]
@@ -94,7 +94,7 @@ class TestConditioner:
         assert gates[-1] == 0.0
 
     def test_vad_hears_quiet_input_louder_but_output_is_untouched(self):
-        c = InputConditioner()
+        c = InputConditioner(preload_strong=False)
         quiet = tone(0.1, amp=0.05)
         boosted = c._vad_input(quiet)
         assert np.abs(boosted).max() == pytest.approx(0.5, rel=0.01)
@@ -102,12 +102,12 @@ class TestConditioner:
         np.testing.assert_array_equal(r.audio, quiet)
 
     def test_vad_gain_is_capped_for_near_silence(self):
-        c = InputConditioner()
+        c = InputConditioner(preload_strong=False)
         hiss = tone(0.1, amp=0.001)
         assert np.abs(c._vad_input(hiss)).max() <= 0.001 * 16.0 + 1e-6
 
     def test_vad_gain_releases_slowly_in_pauses(self):
-        c = InputConditioner()
+        c = InputConditioner(preload_strong=False)
         c._vad_input(tone(0.1, amp=0.4))
         # a 100 ms pause right after loud speech should not be boosted to full scale
         assert np.abs(c._vad_input(tone(0.1, amp=0.01))).max() < 0.05
@@ -135,7 +135,7 @@ class TestConditioner:
 
     def test_highpass_removes_rumble_but_keeps_voice(self):
         def level_after(hz):
-            c = InputConditioner()
+            c = InputConditioner(preload_strong=False)
             c.denoiser = None  # isolate the high-pass
             x = tone(1.0, hz=hz, amp=0.3)
             out = np.concatenate([c.process(x[i : i + 1600], True, 1.0, False, 0.3, 500).audio for i in range(0, len(x), 1600)])
@@ -164,7 +164,7 @@ class TestConditioner:
             raise SystemExit(1)  # what df does when it can't download the weights
 
         monkeypatch.setattr(dfn_module.DfnDenoiser, "__init__", broken)
-        c = InputConditioner()
+        c = InputConditioner(preload_strong=False)
         r = c.process(np.zeros(1600, dtype=np.float32), True, 1.0, False, 0.3, 500, strong=True)
         assert r.audio.shape[0] == 1600
         c.strong_loader.join()
@@ -184,7 +184,7 @@ class TestConditioner:
 
         monkeypatch.setattr(dfn_module.DfnDenoiser, "__init__", slow_init)
         monkeypatch.setattr(dfn_module.DfnDenoiser, "process", lambda self, x, strength=1.0: calls.append(len(x)) or x)
-        c = InputConditioner()
+        c = InputConditioner(preload_strong=False)
         x = np.zeros(1600, dtype=np.float32)
         t0 = time.perf_counter()
         c.process(x, True, 1.0, False, 0.3, 500, strong=True)
@@ -197,7 +197,7 @@ class TestConditioner:
         assert calls == [1600]
 
     def test_everything_off_is_passthrough(self):
-        c = InputConditioner()
+        c = InputConditioner(preload_strong=False)
         x = np.random.default_rng(4).standard_normal(1600).astype(np.float32)
         r = c.process(x, False, 1.0, False, 0.5, 300)
         np.testing.assert_array_equal(r.audio, x)
@@ -280,7 +280,7 @@ def rvc():
     m.audio_buffer = m.pitchf_buffer = m.feature_buffer = None
     m.prevVol = 0.0
     m.prevGate = 0.0
-    m.inputConditioner = InputConditioner()
+    m.inputConditioner = InputConditioner(preload_strong=False)
     m.pipeline = _StubPipeline(slot.samplingRate)
     m.setSamplingRate(48000, 48000)
     return m
@@ -305,6 +305,11 @@ class TestRvcIntegration:
         rvc.settings.vad = 0
         voiced = rvc.inference((np.random.default_rng(7).standard_normal(4800) * 3000).astype(np.float32), 1024, 576)
         assert silent.shape[0] == voiced.shape[0]
+
+    def test_warmup_runs_inference_and_leaves_state_clean(self, rvc):
+        rvc._warmup()
+        assert rvc.pipeline.calls == 2
+        assert rvc.settings.vad == 1 and rvc.audio_buffer is None and rvc.prevGate == 0.0
 
     def test_fade_out_when_speech_stops(self, rvc):
         rvc.settings.vad = 1

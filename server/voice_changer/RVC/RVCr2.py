@@ -72,7 +72,31 @@ class RVCr2(VoiceChangerModel):
         self.settings.tran = self.slotInfo.defaultTune
         self.settings.indexRatio = self.slotInfo.defaultIndexRatio
         self.settings.protect = self.slotInfo.defaultProtect
+        self._warmup()
         logger.info("[Voice Changer] [RVC] Initializing... done")
+
+    def _warmup(self):
+        """Run the pipeline twice on quiet noise. The VAD gate skips inference until the first
+        word, so without this the first cold CUDA run (about 2.7 s on an RTX 3090) landed mid-speech."""
+        saved = (self.settings.vad, self.settings.silentThreshold, getattr(self, "inputSampleRate", None), getattr(self, "outputSampleRate", None))
+        try:
+            self.settings.vad = 0
+            self.settings.silentThreshold = 0.0
+            if saved[2] is None:
+                self.setSamplingRate(48000, 48000)
+            noise = (np.random.default_rng(0).standard_normal(4800) * 30).astype(np.float32)
+            for _ in range(2):
+                self.inference(noise, 1024, 576)
+        except Exception as e:
+            logger.warning(f"[Voice Changer] [RVC] warm-up failed, continuing: {e}")
+        finally:
+            self.settings.vad, self.settings.silentThreshold = saved[0], saved[1]
+            if saved[2] is not None:
+                self.setSamplingRate(saved[2], saved[3])
+            self.audio_buffer = self.pitchf_buffer = self.feature_buffer = None
+            self.prevVol = 0.0
+            self.prevGate = 0.0
+            self.inputConditioner.reset()
 
     def setSamplingRate(self, inputSampleRate, outputSampleRate):
         self.inputSampleRate = inputSampleRate
