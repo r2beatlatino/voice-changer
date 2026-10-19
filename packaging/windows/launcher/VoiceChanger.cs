@@ -1,17 +1,24 @@
 // Lanzador del Cambiador de voz portátil.
-// Arranca el servidor (runtime\python.exe) en un puerto libre, espera a que responda, abre la
-// interfaz en una ventana propia de Edge y apaga el servidor cuando esa ventana se cierra.
-// Compilar: csc /target:winexe /out:VoiceChanger.exe /r:System.Windows.Forms.dll /r:System.Drawing.dll VoiceChanger.cs
+// Arranca el servidor (runtime\python.exe) en un puerto libre, espera a que responda, muestra la
+// interfaz en su propia ventana (WebView2, que viene con Windows 10 y 11) y apaga el servidor
+// cuando esa ventana se cierra. Sin WebView2, usa una ventana de Edge o el navegador.
+// Lo compila build_portable.ps1 (necesita Microsoft.Web.WebView2.Core/WinForms.dll).
 
 using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
 
 static class Launcher
 {
@@ -22,9 +29,16 @@ static class Launcher
     static Process server;
     static StreamWriter log;
 
+    [DllImport("user32.dll")]
+    static extern bool SetProcessDPIAware();
+
     [STAThread]
-    static void Main()
+    static void Main(string[] args)
     {
+        // build_portable.ps1 lo usa para darle el icono al propio .exe
+        if (args.Length == 2 && args[0] == "--write-icon") { WriteIco(args[1]); return; }
+        // nítido en pantallas con escala (125 %, 150 %...)
+        try { SetProcessDPIAware(); } catch { }
         Application.EnableVisualStyles();
         Directory.CreateDirectory(DataDir);
 
@@ -151,6 +165,13 @@ static class Launcher
     static bool OpenWindow(int port, bool waitForClose)
     {
         string url = "http://127.0.0.1:" + port + "/?mode=simple";
+        // la ventana propia del programa; se queda aquí hasta que se cierra
+        try
+        {
+            if (ShowAppWindow(url)) return true;
+        }
+        catch (Exception e) { Log("WebView2 no disponible, uso Edge: " + e.Message); }
+
         string edge = FindEdge();
         if (edge == null)
         {
@@ -158,7 +179,7 @@ static class Launcher
             return false;
         }
         var p = Process.Start(new ProcessStartInfo(edge,
-            "--app=" + url + " --user-data-dir=\"" + Path.Combine(DataDir, "ventana") + "\" --no-first-run --no-default-browser-check --window-size=980,940")
+            "--app=" + url + " --user-data-dir=\"" + Path.Combine(DataDir, "ventana_edge") + "\" --no-first-run --no-default-browser-check --window-size=980,940")
         { UseShellExecute = false });
         if (waitForClose)
         {
@@ -171,6 +192,21 @@ static class Launcher
             }
         }
         return true;
+    }
+
+    // aparte, para que si faltan las DLL de WebView2 el error se pueda capturar al llamarla
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    static bool ShowAppWindow(string url)
+    {
+        CoreWebView2Environment.GetAvailableBrowserVersionString();  // lanza si no está instalado
+        var w = new AppWindow(url);
+        Application.Run(w);
+        return !w.Failed;
+    }
+
+    static void Log(string m)
+    {
+        try { if (log != null) lock (log) log.WriteLine("[launcher] " + m); } catch { }
     }
 
     static string FindEdge()
@@ -273,12 +309,138 @@ static class Launcher
         try { if (log != null) log.Dispose(); } catch { }
     }
 
+    static float DpiScale()
+    {
+        using (var g = Graphics.FromHwnd(IntPtr.Zero)) return g.DpiX / 96f;
+    }
+
+    static Icon appIcon;
+    static Icon AppIcon()
+    {
+        if (appIcon == null)
+            using (var bmp = DrawIcon(64)) appIcon = Icon.FromHandle(bmp.GetHicon());
+        return appIcon;
+    }
+
+    // un micrófono blanco sobre un cuadrado de color
+    static Bitmap DrawIcon(int n)
+    {
+        var bmp = new Bitmap(n, n, PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            float u = n / 64f;
+            using (var bg = new SolidBrush(Color.FromArgb(255, 79, 70, 229)))
+            using (var path = Rounded(2 * u, 2 * u, 60 * u, 60 * u, 14 * u))
+                g.FillPath(bg, path);
+            using (var white = new SolidBrush(Color.White))
+            using (var pen = new Pen(Color.White, Math.Max(1.5f, 4.5f * u)))
+            using (var capsule = Rounded(24 * u, 10 * u, 16 * u, 28 * u, 8 * u))
+            {
+                g.FillPath(white, capsule);
+                g.DrawArc(pen, 16 * u, 18 * u, 32 * u, 28 * u, 0, 180);
+                g.DrawLine(pen, 32 * u, 46 * u, 32 * u, 53 * u);
+                g.DrawLine(pen, 23 * u, 54 * u, 41 * u, 54 * u);
+            }
+        }
+        return bmp;
+    }
+
+    static GraphicsPath Rounded(float x, float y, float w, float h, float r)
+    {
+        var p = new GraphicsPath();
+        float d = 2 * r;
+        p.AddArc(x, y, d, d, 180, 90);
+        p.AddArc(x + w - d, y, d, d, 270, 90);
+        p.AddArc(x + w - d, y + h - d, d, d, 0, 90);
+        p.AddArc(x, y + h - d, d, d, 90, 90);
+        p.CloseFigure();
+        return p;
+    }
+
+    // .ico con imágenes PNG (Windows Vista y posteriores)
+    static void WriteIco(string path)
+    {
+        int[] sizes = { 16, 24, 32, 48, 64, 256 };
+        var images = new byte[sizes.Length][];
+        for (int i = 0; i < sizes.Length; i++)
+            using (var b = DrawIcon(sizes[i]))
+            using (var ms = new MemoryStream()) { b.Save(ms, ImageFormat.Png); images[i] = ms.ToArray(); }
+        using (var w = new BinaryWriter(File.Create(path)))
+        {
+            w.Write((short)0); w.Write((short)1); w.Write((short)sizes.Length);
+            int offset = 6 + 16 * sizes.Length;
+            for (int i = 0; i < sizes.Length; i++)
+            {
+                byte dim = (byte)(sizes[i] >= 256 ? 0 : sizes[i]);
+                w.Write(dim); w.Write(dim); w.Write((byte)0); w.Write((byte)0);
+                w.Write((short)1); w.Write((short)32); w.Write(images[i].Length); w.Write(offset);
+                offset += images[i].Length;
+            }
+            foreach (var img in images) w.Write(img);
+        }
+    }
+
+    class AppWindow : Form
+    {
+        public bool Failed;
+        WebView2 web = new WebView2();
+
+        public AppWindow(string url)
+        {
+            Text = "Cambiador de voz";
+            Icon = AppIcon();
+            StartPosition = FormStartPosition.CenterScreen;
+            float scale = DpiScale();
+            var area = Screen.PrimaryScreen.WorkingArea;
+            ClientSize = new Size(Math.Min((int)(980 * scale), area.Width - 40), Math.Min((int)(940 * scale), area.Height - 60));
+            web.Dock = DockStyle.Fill;
+            Controls.Add(web);
+            Load += async (s, e) =>
+            {
+                try
+                {
+                    var env = await CoreWebView2Environment.CreateAsync(null, Path.Combine(DataDir, "ventana"));
+                    await web.EnsureCoreWebView2Async(env);
+                    var core = web.CoreWebView2;
+                    core.Settings.AreDevToolsEnabled = false;
+                    core.Settings.IsStatusBarEnabled = false;
+                    // el micrófono es para lo que sirve el programa: no preguntar
+                    core.PermissionRequested += (o, a) =>
+                    {
+                        if (a.PermissionKind == CoreWebView2PermissionKind.Microphone) a.State = CoreWebView2PermissionState.Allow;
+                    };
+                    // los enlaces (créditos, licencias) se abren en el navegador normal
+                    core.NewWindowRequested += (o, a) =>
+                    {
+                        a.Handled = true;
+                        try { Process.Start(a.Uri); } catch { }
+                    };
+                    web.Source = new Uri(url);
+                }
+                catch (Exception ex)
+                {
+                    Log("WebView2 no arrancó, uso Edge: " + ex.Message);
+                    Failed = true;
+                    Close();
+                }
+            };
+            // si el servidor se cae, cerrar la ventana (el lanzador avisa)
+            var timer = new System.Windows.Forms.Timer { Interval = 500 };
+            timer.Tick += (s, e) => { if (server != null && server.HasExited) Close(); };
+            timer.Start();
+        }
+    }
+
     class Splash : Form
     {
         Label title = new Label(), detail = new Label();
         public bool Cancelled;
         public Splash()
         {
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
+            Icon = AppIcon();
             Text = "Cambiador de voz";
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false; MinimizeBox = true;
@@ -302,6 +464,9 @@ static class Launcher
     {
         public KeepAlive(int port)
         {
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
+            Icon = AppIcon();
             Text = "Cambiador de voz";
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;

@@ -2,6 +2,8 @@
 
 Builds "Cambiador de voz": one folder (and zip) with its own Python runtime, the app, the
 DeepFilterNet3 weights and `VoiceChanger.exe`, so it runs on a PC with nothing installed.
+`VoiceChanger.exe` shows the interface in its own window (WebView2, part of Windows 10/11; the
+script downloads the WebView2 SDK from NuGet) and falls back to an Edge window without it.
 The base models (HuBERT, RMVPE, ...) are downloaded on the first run.
 
 Needs, on the build PC: this repo with `server\.venv` (Python 3.10 made from python-build-standalone,

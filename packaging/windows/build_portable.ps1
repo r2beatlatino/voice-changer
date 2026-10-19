@@ -7,7 +7,9 @@ param(
     [string]$Out = "",
     [string]$Name = "CambiadorDeVoz",
     [switch]$IncludePretrain,   # bundle server\pretrain (GPL / non-commercial weights: personal use only)
-    [switch]$NoZip
+    [switch]$NoZip,
+    # the WebView2 SDK (NuGet) for the program's own window; the runtime itself comes with Windows 10/11
+    [string]$WebView2Version = "1.0.2651.64"
 )
 $ErrorActionPreference = "Stop"
 $here = $PSScriptRoot
@@ -70,10 +72,45 @@ if ($IncludePretrain) {
 Step "Models (DeepFilterNet3)"
 Robo $dfn (Join-Path $dst "modelos\DeepFilterNet3") @("/XF", "*.log")
 
+Step "WebView2 SDK $WebView2Version"
+$wv = Join-Path $Out "webview2_$WebView2Version"
+if (-not (Test-Path (Join-Path $wv "WebView2Loader.dll"))) {
+    $pkg = Join-Path $Out "webview2_$WebView2Version.zip"
+    $tmp = Join-Path $Out "webview2_pkg"
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    Invoke-WebRequest "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/$WebView2Version" -OutFile $pkg -UseBasicParsing
+    if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
+    Expand-Archive $pkg $tmp
+    New-Item -ItemType Directory -Force $wv | Out-Null
+    foreach ($n in "Microsoft.Web.WebView2.Core.dll", "Microsoft.Web.WebView2.WinForms.dll") {
+        $f = Get-ChildItem $tmp -Recurse -Filter $n | Where-Object { $_.FullName -match '\\net4[0-9]*\\' } | Select-Object -First 1
+        if (-not $f) { throw "$n (.NET Framework) not found in the WebView2 package" }
+        Copy-Item $f.FullName $wv
+    }
+    Copy-Item (Join-Path $tmp "runtimes\win-x64\native\WebView2Loader.dll") $wv
+    Remove-Item -Recurse -Force $tmp, $pkg
+}
+
 Step "Launcher"
 $csc = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-& $csc -nologo -codepage:65001 -target:winexe -out:(Join-Path $dst "VoiceChanger.exe") -r:System.Windows.Forms.dll -r:System.Drawing.dll (Join-Path $here "launcher\VoiceChanger.cs")
+$exe = Join-Path $dst "VoiceChanger.exe"
+$src = Join-Path $here "launcher\VoiceChanger.cs"
+$cscArgs = @("-nologo", "-codepage:65001", "-target:winexe", "-r:System.Windows.Forms.dll", "-r:System.Drawing.dll",
+             "-r:$(Join-Path $wv 'Microsoft.Web.WebView2.Core.dll')", "-r:$(Join-Path $wv 'Microsoft.Web.WebView2.WinForms.dll')")
+& $csc @cscArgs "-out:$exe" $src
 if ($LASTEXITCODE -ne 0) { throw "launcher build failed" }
+Copy-Item (Join-Path $wv "*.dll") $dst
+# the launcher draws its own icon; build it again with that icon so Explorer and the taskbar show it
+$ico = Join-Path $Out "VoiceChanger.ico"
+Start-Process -FilePath $exe -ArgumentList "--write-icon", "`"$ico`"" -Wait
+if (Test-Path $ico) {
+    & $csc @cscArgs "-win32icon:$ico" "-out:$exe" $src
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "launcher build with icon failed; building without it"
+        & $csc @cscArgs "-out:$exe" $src
+        if ($LASTEXITCODE -ne 0) { throw "launcher build failed" }
+    }
+} else { Write-Warning "icon not written; the .exe keeps the default icon" }
 Copy-Item (Join-Path $here "LEEME.txt") (Join-Path $dst "LEEME.txt")
 
 Step "Licenses"
@@ -91,6 +128,7 @@ Get-ChildItem $rsite -Directory -Filter "*.dist-info" | ForEach-Object {
 Componentes incluidos y sus licencias
 - w-okada voice-changer: MIT (w-okada-voice-changer_LICENSE.txt, más el aviso LICENSE-NOTICE)
 - Python (python-build-standalone): PSF (python_LICENSE.txt)
+- Microsoft Edge WebView2 SDK (Microsoft.Web.WebView2.*.dll, WebView2Loader.dll): licencia BSD de Microsoft
 - Paquetes de Python (torch, onnxruntime, fairseq, faiss, DeepFilterNet, ...): ver paquetes-python\
 - GTCRN y Silero VAD (modelos de limpieza y detección de voz): ver LICENSE-gtcrn / LICENSE-silero-vad
 - DeepFilterNet3 (modelo de limpieza fuerte, carpeta modelos\DeepFilterNet3): MIT / Apache-2.0

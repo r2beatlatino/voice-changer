@@ -13,7 +13,8 @@ Qué necesitas
   Sin tarjeta NVIDIA también arranca, pero va demasiado lento para hablar en tiempo real.
 - Unos 15 GB libres en el disco.
 - Internet la PRIMERA vez que lo abras: descarga los modelos base (~1.8 GB). Después ya no hace falta.
-- Microsoft Edge (viene con Windows). Si no lo tienes, se abre en tu navegador normal.
+- Microsoft Edge WebView2 (viene con Windows 10 y 11). Si falta, se abre en una ventana de Edge
+  o en tu navegador normal.
 
 Cómo usarlo
 -----------
@@ -35,7 +36,8 @@ Si algo va mal
 - El registro está en: datos\registro_servidor.txt
 - Si Windows dice «Windows protegió su PC», pulsa «Más información» → «Ejecutar de todas formas»
   (el programa no está firmado).
-- Si el micrófono no funciona, la primera vez la ventana pide permiso: pulsa «Permitir».
+- Si el micrófono no funciona, mira en Windows: Configuración → Privacidad → Micrófono, y deja
+  que las aplicaciones de escritorio usen el micrófono.
 
 Desinstalar
 -----------
