@@ -25,6 +25,7 @@ export const OpenEnablePassThroughDialogCheckbox = "open-enable-pass-through-dia
 
 export const OpenTextInputDialogCheckbox = "open-text-input-dialog-checkbox";
 export const OpenShowLicenseDialogCheckbox = "open-show-license-dialog-checkbox";
+export const OpenCalibrationDialogCheckbox = "open-calibration-dialog-checkbox";
 
 type Props = {
     children: ReactNode;
@@ -51,6 +52,7 @@ export type StateControls = {
     showEnablePassThroughDialogCheckbox: StateControlCheckbox;
     showTextInputCheckbox: StateControlCheckbox;
     showLicenseCheckbox: StateControlCheckbox;
+    showCalibrationCheckbox: StateControlCheckbox;
 };
 
 type GuiStateAndMethod = {
@@ -271,6 +273,7 @@ export const GuiStateProvider = ({ children }: Props) => {
 
     const showTextInputCheckbox = useStateControlCheckbox(OpenTextInputDialogCheckbox);
     const showLicenseCheckbox = useStateControlCheckbox(OpenShowLicenseDialogCheckbox);
+    const showCalibrationCheckbox = useStateControlCheckbox(OpenCalibrationDialogCheckbox);
 
     useEffect(() => {
         openServerControlCheckbox.updateState(true);
@@ -294,6 +297,7 @@ export const GuiStateProvider = ({ children }: Props) => {
 
         showTextInputCheckbox.updateState(false);
         showLicenseCheckbox.updateState(false);
+        showCalibrationCheckbox.updateState(false);
     }, []);
 
     useEffect(() => {
@@ -353,6 +357,7 @@ export const GuiStateProvider = ({ children }: Props) => {
 
             showTextInputCheckbox,
             showLicenseCheckbox,
+            showCalibrationCheckbox,
         },
         isConverting,
         setIsConverting,

@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { useAppState } from "../../../001_provider/001_AppStateProvider";
 import { F0Detector } from "@dannadori/voice-changer-client-js";
 import { useAppRoot } from "../../../001_provider/001_AppRootProvider";
+import { useGuiState } from "../001_GuiStateProvider";
 
 export type QualityAreaProps = {
     detectors: string[];
@@ -12,6 +13,7 @@ export const QualityArea = (props: QualityAreaProps) => {
     const { appGuiSettingState } = useAppRoot();
     const edition = appGuiSettingState.edition;
 
+    const { stateControls } = useGuiState();
     const qualityArea = useMemo(() => {
         if (!serverSetting.updateServerSettings || !setVoiceChangerClientSetting || !serverSetting.serverSetting || !setting) {
             return <></>;
@@ -143,6 +145,11 @@ export const QualityArea = (props: QualityAreaProps) => {
                                 </option>
                             ))}
                         </select>
+                        <div className="config-sub-area-buttons">
+                            <div onClick={() => stateControls.showCalibrationCheckbox.updateState(true)} className="config-sub-area-button">
+                                Asistente
+                            </div>
+                        </div>
                     </div>
                 </div>
                 {slider(

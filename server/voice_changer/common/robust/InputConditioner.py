@@ -37,6 +37,16 @@ HIGHPASS_HZ = 85.0
 HIGHPASS_SOS = butter(4, HIGHPASS_HZ, btype="highpass", fs=16000, output="sos")
 
 
+def next_gate(gate_open: bool, hangover_left: float, prob: float, threshold: float, hangover_ms: float, chunk_ms: float):
+    """One step of the VAD gate. Hysteresis makes it harder to open than to stay open, so it
+    doesn't chatter mid-word. Returns (gate_open, hangover_left)."""
+    if prob >= threshold or (gate_open and prob >= threshold - 0.15):
+        return True, hangover_ms
+    if hangover_left > 0:
+        return gate_open, hangover_left - chunk_ms
+    return False, 0.0
+
+
 @dataclass
 class ConditionerResult:
     audio: np.ndarray  # float32, 16 kHz, [-1, 1]
@@ -166,13 +176,5 @@ class InputConditioner:
             return ConditionerResult(audio, 1.0, 1.0)
 
         prob = self.vad.process(self._vad_input(audio))
-        chunk_ms = audio.shape[0] / 16.0
-        # hysteresis: harder to open than to stay open, so the gate doesn't chatter mid-word
-        if prob >= vad_threshold or (self.gate_open and prob >= vad_threshold - 0.15):
-            self.gate_open = True
-            self.hangover_left = vad_hangover_ms
-        elif self.hangover_left > 0:
-            self.hangover_left -= chunk_ms
-        else:
-            self.gate_open = False
+        self.gate_open, self.hangover_left = next_gate(self.gate_open, self.hangover_left, prob, vad_threshold, vad_hangover_ms, audio.shape[0] / 16.0)
         return ConditionerResult(audio, prob, 1.0 if self.gate_open else 0.0)

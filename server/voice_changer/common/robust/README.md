@@ -30,6 +30,13 @@ Each voice (model slot) remembers its own pitch, index, protect and noise settin
 `stored_setting.json`, so they survive a restart. The "Perfil" menu sets the noise controls in
 one click: Casa tranquila (GTCRN, VAD 0.3), Con ruido (Strong, VAD 0.4), Mucho ruido (Strong, VAD 0.5).
 
+The "Asistente" button (next to Perfil) records 10 s of the room and 15 s of the user reading,
+and `POST /calibrate` (`Calibration.py`) suggests the settings: Strong when the voice is less than
+35 dB above the noise, the highest VAD threshold that still passes 95% of the speech, and a pitch
+shift from the user's median pitch to a typical female (260 Hz) or male (125 Hz) voice. It also
+flags a quiet or clipping mic, low rumble and speech-like background noise.
+`POST /convert_clip` converts the reading block by block so it can be heard before and after.
+
 ## Models
 
 Both models are bundled in `models/` (MIT licensed, see the LICENSE files):
