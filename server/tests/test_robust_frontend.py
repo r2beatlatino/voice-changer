@@ -183,7 +183,7 @@ class TestConditioner:
             self.reset()
 
         monkeypatch.setattr(dfn_module.DfnDenoiser, "__init__", slow_init)
-        monkeypatch.setattr(dfn_module.DfnDenoiser, "process", lambda self, x, strength: calls.append(len(x)) or x)
+        monkeypatch.setattr(dfn_module.DfnDenoiser, "process", lambda self, x, strength=1.0: calls.append(len(x)) or x)
         c = InputConditioner()
         x = np.zeros(1600, dtype=np.float32)
         t0 = time.perf_counter()
