@@ -141,14 +141,14 @@ def downloadWeight(voiceChangerParams: VoiceChangerParams):
     with ThreadPoolExecutor() as pool:
         pool.map(download, downloadParams)
 
-    if not all(is_usable(w) for w in [hubert_base, hubert_base_jp, hubert_soft, nsf_hifigan, nsf_hifigan_config]):
-        raise WeightDownladException()
-
-    # ファイルサイズをログに書き込む。（デバッグ用）
-    for weight in weight_files:
+    # Only what RVC needs is fatal. The others serve other model types (Japanese HuBERT,
+    # DDSP-SVC, Beatrice...); one of them (rinna) now answers 401, which failed every first run.
+    essential = [hubert_base, content_vec_500_onnx, rmvpe, rmvpe_onnx]
+    for weight in weight_files + [nsf_hifigan_config, nsf_hifigan_onnx]:
         if is_usable(weight):
-            file_size = os.path.getsize(weight)
-            logger.debug(f"weight file [{weight}]: {file_size}")
-        else:
+            logger.debug(f"weight file [{weight}]: {os.path.getsize(weight)}")
+        elif weight in essential:
             logger.warning(f"weight file is missing. {weight}")
             raise WeightDownladException()
+        else:
+            logger.warning(f"optional weight file is missing, models that need it won't load: {weight}")

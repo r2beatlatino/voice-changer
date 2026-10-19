@@ -7,7 +7,10 @@ from mods.log_control import VoiceChangaerLogger
 
 logger = VoiceChangaerLogger.get_instance().getLogger()
 
-MAX_TRIES = 50
+# give up after this many attempts in a row that brought no new bytes; big files on a flaky
+# connection are cut every few MB, so attempts that make progress don't count
+MAX_STALLED_TRIES = 10
+MAX_SECONDS = 45 * 60
 CHUNK = 8192  # small, so little is lost when a connection drops mid-chunk
 MODEL_EXTENSIONS = (".pt", ".pth", ".onnx", ".bin", ".safetensors")
 
@@ -29,15 +32,25 @@ def _fetch(url: str, saveTo: str, on_bytes=None):
     part = saveTo + ".part"
     total = None
     last_error = None
-    for attempt in range(MAX_TRIES):
+    stalled = 0
+    started = time.time()
+    prev_have = -1
+    while True:
         have = os.path.getsize(part) if os.path.exists(part) else 0
         if total is not None and have >= total:
             break
+        stalled = 0 if have > prev_have else stalled + 1
+        prev_have = have
+        if stalled >= MAX_STALLED_TRIES or time.time() - started > MAX_SECONDS:
+            raise RuntimeError(f"download failed, no progress after {stalled} tries: {url}: {last_error}")
         headers = {"Range": f"bytes={have}-"} if have > 0 else {}
         try:
             with requests.get(url, stream=True, allow_redirects=True, headers=headers, timeout=30) as req:
                 if req.status_code == 416 and have > 0:  # nothing left to send
                     break
+                if 400 <= req.status_code < 500:
+                    # gated, removed or wrong URL: retrying won't help
+                    raise PermissionError(f"HTTP {req.status_code} for {url}")
                 req.raise_for_status()
                 if have > 0 and req.status_code != 206:  # the server ignored the range: start over
                     have = 0
@@ -53,12 +66,12 @@ def _fetch(url: str, saveTo: str, on_bytes=None):
                                 on_bytes(len(chunk), total)
             if total is None or os.path.getsize(part) >= total:
                 break
+        except PermissionError:
+            raise
         except Exception as e:
             last_error = e
-            logger.info(f"[Downloader] {os.path.basename(saveTo)}: connection dropped ({e}), resuming ({attempt + 1}/{MAX_TRIES})")
+            logger.info(f"[Downloader] {os.path.basename(saveTo)}: connection dropped at {have} bytes ({e}), resuming")
             time.sleep(1.5)
-    else:
-        raise RuntimeError(f"download failed after {MAX_TRIES} tries: {url}: {last_error}")
     if total is not None and os.path.getsize(part) != total:
         raise RuntimeError(f"download incomplete: {url}: {os.path.getsize(part)} of {total} bytes")
     os.replace(part, saveTo)

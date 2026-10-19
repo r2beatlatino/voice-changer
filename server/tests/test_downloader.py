@@ -60,11 +60,42 @@ def test_resumes_after_dropped_connections(tmp_path):
 
 
 def test_gives_up_without_leaving_a_truncated_model(tmp_path, monkeypatch):
-    monkeypatch.setattr(D, "MAX_TRIES", 3)
+    monkeypatch.setattr(D, "MAX_STALLED_TRIES", 3)
     srv = _server(cut_after=10_000, honour_range=False)  # never gets past 10 kB
     dst = tmp_path / "model.onnx"
     D.download({"url": f"http://127.0.0.1:{srv.server_address[1]}/m", "saveTo": str(dst), "position": 0})
     assert not dst.exists()
+    srv.shutdown()
+
+
+def test_many_cuts_with_progress_keep_going(tmp_path, monkeypatch):
+    monkeypatch.setattr(D, "MAX_STALLED_TRIES", 3)
+    srv = _server(cut_after=10_000)  # 30 cuts, each one advancing
+    dst = tmp_path / "big.pt"
+    D.download({"url": f"http://127.0.0.1:{srv.server_address[1]}/m", "saveTo": str(dst), "position": 0})
+    assert dst.read_bytes() == PAYLOAD
+    srv.shutdown()
+
+
+def test_client_errors_are_not_retried(tmp_path):
+    calls = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            calls.append(1)
+            self.send_response(401)
+            self.send_header("Content-Length", "29")
+            self.end_headers()
+            self.wfile.write(b"Invalid username or password.")
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    dst = tmp_path / "rinna.pt"
+    D.download({"url": f"http://127.0.0.1:{srv.server_address[1]}/m", "saveTo": str(dst), "position": 0})
+    assert len(calls) == 1 and not dst.exists()
     srv.shutdown()
 
 
