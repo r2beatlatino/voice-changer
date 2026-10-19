@@ -38,7 +38,9 @@ class DeviceManager(object):
         devNum = torch.cuda.device_count()
         if gpu >= 0 and "CUDAExecutionProvider" in availableProviders and devNum > 0:
             if gpu < devNum:  # ひとつ前のif文で弾いてもよいが、エラーの解像度を上げるため一段下げ。
-                return ["CUDAExecutionProvider"], [{"device_id": gpu}]
+                # The default EXHAUSTIVE search benchmarks every conv algorithm on the first run of
+                # each session: 2.5 s for RMVPE alone, 5.6 s for the first block after a voice switch.
+                return ["CUDAExecutionProvider"], [{"device_id": gpu, "cudnn_conv_algo_search": "HEURISTIC"}]
             else:
                 print("[Voice Changer] device detection error, fallback to cpu")
                 return ["CPUExecutionProvider"], [

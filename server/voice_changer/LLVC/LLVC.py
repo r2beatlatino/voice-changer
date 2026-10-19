@@ -8,6 +8,7 @@ from data.ModelSlot import LLVCModelSlot
 from mods.log_control import VoiceChangaerLogger
 import numpy as np
 from voice_changer.LLVC.LLVCInferencer import LLVCInferencer
+from voice_changer.common.robust.InputConditioner import InputConditioner
 from voice_changer.ModelSlotManager import ModelSlotManager
 from voice_changer.VoiceChangerParamsManager import VoiceChangerParamsManager
 from voice_changer.utils.Timer import Timer2
@@ -31,10 +32,48 @@ class LLVCSetting:
     crossfade: bool = True
     resample: bool = True
 
+    # noise robustness, same controls as RVC. The pretrained model drops voicing on noisy
+    # input (choppy output), and DeepFilterNet3 in front of it fixed that on a real recording.
+    denoise: int = 1  # 0:off, 1:on
+    denoiseStrength: float = 1.0
+    denoiseStrong: int = 1  # 0:GTCRN, 1:DeepFilterNet3 (falls back to GTCRN without the deepfilternet package)
+    vad: int = 1
+    vadThreshold: float = 0.3
+    vadHangoverMs: int = 500
+
     # 変更可能な変数だけ列挙
-    intData: list[str] = field(default_factory=lambda: [])
-    floatData: list[str] = field(default_factory=lambda: [])
+    intData: list[str] = field(default_factory=lambda: ["denoise", "denoiseStrong", "vad", "vadHangoverMs"])
+    floatData: list[str] = field(default_factory=lambda: ["denoiseStrength", "vadThreshold"])
     strData: list[str] = field(default_factory=lambda: [])
+
+
+class StreamResampler:
+    """Chunk-by-chunk resampling without edge artefacts: each call resamples with some context on
+    both sides and emits only the middle, so the output is delayed by that context (about 1-4 ms).
+    It only cuts at input positions that map to whole output samples, or the chunks would be
+    misaligned by a fraction of a sample."""
+
+    MIN_CTX = 64
+
+    def __init__(self, sr_in: int, sr_out: int):
+        self.sr_in = sr_in
+        self.sr_out = sr_out
+        d = math.gcd(sr_in, sr_out)
+        self.step_in = sr_in // d
+        self.step_out = sr_out // d
+        self.ctx = math.ceil(self.MIN_CTX / self.step_in) * self.step_in
+        self.buf = np.zeros(self.ctx, dtype=np.float32)
+
+    def __call__(self, x: np.ndarray) -> np.ndarray:
+        self.buf = np.concatenate([self.buf, x.astype(np.float32)])
+        emit = (self.buf.shape[0] - 2 * self.ctx) // self.step_in * self.step_in
+        if emit <= 0:
+            return np.zeros(0, dtype=np.float32)
+        y = self.buf if self.sr_in == self.sr_out else resampy.resample(self.buf, self.sr_in, self.sr_out, filter="kaiser_fast")
+        start = self.ctx // self.step_in * self.step_out
+        out = y[start : start + emit // self.step_in * self.step_out]
+        self.buf = self.buf[emit:]
+        return out.astype(np.float32)
 
 
 class LLVC(VoiceChangerModel):
@@ -51,6 +90,7 @@ class LLVC(VoiceChangerModel):
         self.params = params
         self.slotInfo = slotInfo
         self.modelSlotManager = ModelSlotManager.get_instance(self.params.model_dir)
+        self.inputConditioner = InputConditioner()
 
         # # クロスフェード・リサンプリング設定
         # ## 16Kで出力するモード
@@ -78,6 +118,19 @@ class LLVC(VoiceChangerModel):
         self.inferencer = LLVCInferencer().loadModel(modelPath, configPath)
         self.prev_audio1 = None
         self.result_buff = None
+        self._reset_stream()
+
+    def _reset_stream(self):
+        self.in_rs = StreamResampler(self.inputSampleRate, self.processingSampleRate)
+        # one processing unit of headroom so the FIFO below never runs dry
+        unit = self.inferencer.model.dec_chunk_size * self.inferencer.model.L
+        self.out_fifo = np.zeros(unit, dtype=np.float32)
+        self.in_total = 0
+        self.out_total = 0
+        self.hp_sos = signal.butter(N=5, Wn=48, btype="high", fs=self.processingSampleRate, output="sos")
+        self.hp_zi = np.zeros((self.hp_sos.shape[0], 2))
+        self.prevGate = 0.0
+        self.inputConditioner.reset()
 
     def updateSetting(self, key: str, val: Any):
         if key in self.settings.intData:
@@ -99,6 +152,8 @@ class LLVC(VoiceChangerModel):
         self.outputSampleRate = outputSampleRate
         self.downsampler = torchaudio.transforms.Resample(self.inputSampleRate, self.processingSampleRate)
         self.upsampler = torchaudio.transforms.Resample(self.processingSampleRate, self.outputSampleRate)
+        if hasattr(self, "inferencer"):
+            self._reset_stream()
 
     def _preprocess(self, waveform: AudioInOutFloat, srcSampleRate: int) -> AudioInOutFloat:
         """データ前処理(torch independent)
@@ -135,12 +190,46 @@ class LLVC(VoiceChangerModel):
 
                 # リサンプリングとバターフィルタ (torch independent)
                 receivedData = receivedData.astype(np.float32) / 32768.0
-                waveformFloat = self._preprocess(receivedData, self.inputSampleRate)
-                # print(f"input audio shape 48k:{receivedData.shape} -> 16K:{waveformFloat.shape}")
+                if receivedData.ndim == 2:
+                    receivedData = receivedData.mean(axis=-1)
+                # streaming resample + causal high-pass: per-chunk resampy and filtfilt left edge
+                # artefacts at every block boundary
+                waveformFloat = self.in_rs(receivedData)
+                waveformFloat, self.hp_zi = signal.sosfilt(self.hp_sos, waveformFloat, zi=self.hp_zi)
+
+                conditioned = self.inputConditioner.process(
+                    waveformFloat.astype(np.float32),
+                    denoise=self.settings.denoise == 1,
+                    denoise_strength=self.settings.denoiseStrength,
+                    strong=self.settings.denoiseStrong == 1,
+                    vad=self.settings.vad == 1,
+                    vad_threshold=self.settings.vadThreshold,
+                    vad_hangover_ms=self.settings.vadHangoverMs,
+                )
+                waveformFloat = conditioned.audio
+                # the model is streaming, so it keeps running on the gated input instead of being
+                # skipped; a ramp over the block avoids clicks when the gate moves
+                gate, prevGate = conditioned.gate, self.prevGate
+                self.prevGate = gate
+                if gate != prevGate:
+                    waveformFloat = waveformFloat * np.linspace(prevGate, gate, waveformFloat.shape[0], dtype=np.float32)
+                elif gate == 0.0:
+                    waveformFloat = np.zeros_like(waveformFloat)
 
                 # 推論
-                audio1 = self.inferencer.infer(waveformFloat)
+                audio1 = self.inferencer.infer(waveformFloat.astype(np.float32))
                 audio1 = audio1.detach().cpu().numpy()
+
+                # The model only emits whole processing units, so its output length jitters from
+                # block to block. SOLA expects exactly one block (plus overlap) per call, otherwise
+                # it re-uses or skips audio, so hand it a fixed amount from a FIFO.
+                self.out_fifo = np.concatenate([self.out_fifo, audio1])
+                self.in_total += receivedData.shape[0]
+                need = round(self.in_total * self.processingSampleRate / self.inputSampleRate) - self.out_total
+                if self.out_fifo.shape[0] < need:
+                    self.out_fifo = np.concatenate([self.out_fifo, np.zeros(need - self.out_fifo.shape[0], dtype=np.float32)])
+                audio1, self.out_fifo = self.out_fifo[:need], self.out_fifo[need:]
+                self.out_total += need
                 # print(f"infered shape: in:{waveformFloat.shape} -> out:{ audio1.shape}")
 
                 # クロスフェード洋データ追加とリサンプリング

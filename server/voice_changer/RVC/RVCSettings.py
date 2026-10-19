@@ -9,7 +9,7 @@ class RVCSettings:
     f0Detector: str = "rmvpe_onnx"  # dio or harvest
     tran: int = 12
     silentThreshold: float = 0.00001
-    extraConvertSize: int = 1024 * 4
+    extraConvertSize: int = 1024 * 64  # less context made Whisper misread about 1 word in 5; no added latency
 
     indexRatio: float = 0
     protect: float = 0.5
@@ -20,10 +20,12 @@ class RVCSettings:
     # noise robustness (server side, works in server-audio mode too)
     denoise: int = 1  # 0:off, 1:GTCRN
     denoiseStrength: float = 1.0  # 0.0 (raw mic) .. 1.0 (fully denoised)
+    denoiseStrong: int = 0  # 0:GTCRN, 1:DeepFilterNet3 (needs the deepfilternet package)
     vad: int = 1  # 0:off, 1:Silero VAD gate
-    vadThreshold: float = 0.5
-    vadHangoverMs: int = 300  # keep the gate open this long after speech ends
+    vadThreshold: float = 0.3
+    vadHangoverMs: int = 500  # keep the gate open this long after speech ends
     f0Stabilize: int = 1  # 0:off, 1:remove pitch blips, gaps and octave jumps
+    f0Floor: int = 1  # 0:off, 1:lift words dropped an octave below the usual pitch
 
     speakers: dict[str, int] = field(default_factory=lambda: {})
     # isHalf: int = 1  # 0:off, 1:on
@@ -37,9 +39,11 @@ class RVCSettings:
         "rvcQuality",
         "silenceFront",
         "denoise",
+        "denoiseStrong",
         "vad",
         "vadHangoverMs",
         "f0Stabilize",
+        "f0Floor",
     ]
     floatData = ["silentThreshold", "indexRatio", "protect", "denoiseStrength", "vadThreshold"]
     strData = ["f0Detector"]

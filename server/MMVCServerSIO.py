@@ -30,6 +30,7 @@ from const import (
 )
 import subprocess
 import multiprocessing as mp
+import threading
 
 from mods.log_control import VoiceChangaerLogger
 
@@ -126,13 +127,29 @@ HOST = args.host
 PORT = args.p
 
 
+def _exit_with_parent():
+    """Windows doesn't kill child processes with their parent, so a killed launcher used to leave
+    this server running and holding the port."""
+    parent = mp.parent_process()
+    if parent is None:
+        return
+
+    def watch():
+        parent.join()
+        os._exit(0)
+
+    threading.Thread(target=watch, daemon=True).start()
+
+
 def localServer(logLevel: str = "critical", key_path: str | None = None, cert_path: str | None = None):
+    _exit_with_parent()
     try:
         uvicorn.run(
             f"{os.path.basename(__file__)[:-3]}:app_socketio",
             host=HOST,
             port=int(PORT),
-            reload=False if hasattr(sys, "_MEIPASS") else True,
+            # the reload watcher scanned the whole venv nonstop and left orphans holding the port
+            reload=False,
             ssl_keyfile=key_path,
             ssl_certfile=cert_path,
             log_level=logLevel,
@@ -255,10 +272,15 @@ if __name__ == "__main__":
             logger.error(f"[Voice Changer] Web Server(https) Launch Exception, {e}")
 
     else:
+        # not daemon: on Windows the launcher may finish right away (native client missing) and a
+        # daemon child would be killed with it; _exit_with_parent covers a killed launcher instead
         p = mp.Process(name="p", target=localServer, args=(args.logLevel,))
         p.start()
         try:
-            if sys.platform.startswith("win"):
+            if os.environ.get("VC_LAUNCHER") == "1":
+                # the portable launcher opens its own window and stops the server itself
+                p.join()
+            elif sys.platform.startswith("win"):
                 process = subprocess.Popen([NATIVE_CLIENT_FILE_WIN, "--disable-gpu", "-u", f"http://localhost:{PORT}/"])
                 return_code = process.wait()
                 logger.info("client closed.")

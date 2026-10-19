@@ -1,7 +1,7 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
 
-from downloader.Downloader import download
+from downloader.Downloader import download, is_usable
 from mods.log_control import VoiceChangaerLogger
 from voice_changer.utils.VoiceChangerParams import VoiceChangerParams
 from Exceptions import WeightDownladException
@@ -35,7 +35,7 @@ def downloadWeight(voiceChangerParams: VoiceChangerParams):
 
     # file exists check (currently only for rvc)
     downloadParams = []
-    if os.path.exists(hubert_base) is False:
+    if not is_usable(hubert_base):
         downloadParams.append(
             {
                 "url": "https://huggingface.co/ddPn08/rvc-webui-models/resolve/main/embeddings/hubert_base.pt",
@@ -43,7 +43,7 @@ def downloadWeight(voiceChangerParams: VoiceChangerParams):
                 "position": 0,
             }
         )
-    if os.path.exists(hubert_base_jp) is False:
+    if not is_usable(hubert_base_jp):
         downloadParams.append(
             {
                 "url": "https://huggingface.co/rinna/japanese-hubert-base/resolve/main/fairseq/model.pt",
@@ -51,7 +51,7 @@ def downloadWeight(voiceChangerParams: VoiceChangerParams):
                 "position": 1,
             }
         )
-    if os.path.exists(hubert_soft) is False:
+    if not is_usable(hubert_soft):
         downloadParams.append(
             {
                 "url": "https://huggingface.co/wok000/weights/resolve/main/ddsp-svc30/embedder/hubert-soft-0d54a1f4.pt",
@@ -59,7 +59,7 @@ def downloadWeight(voiceChangerParams: VoiceChangerParams):
                 "position": 2,
             }
         )
-    if os.path.exists(nsf_hifigan) is False:
+    if not is_usable(nsf_hifigan):
         downloadParams.append(
             {
                 "url": "https://huggingface.co/wok000/weights/resolve/main/ddsp-svc30/nsf_hifigan_20221211/model.bin",
@@ -69,7 +69,7 @@ def downloadWeight(voiceChangerParams: VoiceChangerParams):
         )
     nsf_hifigan_config = os.path.join(os.path.dirname(nsf_hifigan), "config.json")
 
-    if os.path.exists(nsf_hifigan_config) is False:
+    if not is_usable(nsf_hifigan_config):
         downloadParams.append(
             {
                 "url": "https://huggingface.co/wok000/weights/raw/main/ddsp-svc30/nsf_hifigan_20221211/config.json",
@@ -78,7 +78,7 @@ def downloadWeight(voiceChangerParams: VoiceChangerParams):
             }
         )
     nsf_hifigan_onnx = os.path.join(os.path.dirname(nsf_hifigan), "nsf_hifigan.onnx")
-    if os.path.exists(nsf_hifigan_onnx) is False:
+    if not is_usable(nsf_hifigan_onnx):
         downloadParams.append(
             {
                 "url": "https://huggingface.co/wok000/weights/resolve/main/ddsp-svc30/nsf_hifigan_onnx_20221211/nsf_hifigan.onnx",
@@ -87,7 +87,7 @@ def downloadWeight(voiceChangerParams: VoiceChangerParams):
             }
         )
 
-    if os.path.exists(crepe_onnx_full) is False:
+    if not is_usable(crepe_onnx_full):
         downloadParams.append(
             {
                 "url": "https://huggingface.co/wok000/weights/resolve/main/crepe/onnx/full.onnx",
@@ -95,7 +95,7 @@ def downloadWeight(voiceChangerParams: VoiceChangerParams):
                 "position": 5,
             }
         )
-    if os.path.exists(crepe_onnx_tiny) is False:
+    if not is_usable(crepe_onnx_tiny):
         downloadParams.append(
             {
                 "url": "https://huggingface.co/wok000/weights/resolve/main/crepe/onnx/tiny.onnx",
@@ -104,7 +104,7 @@ def downloadWeight(voiceChangerParams: VoiceChangerParams):
             }
         )
 
-    if os.path.exists(content_vec_500_onnx) is False:
+    if not is_usable(content_vec_500_onnx):
         downloadParams.append(
             {
                 "url": "https://huggingface.co/wok000/weights_gpl/resolve/main/content-vec/contentvec-f.onnx",
@@ -112,7 +112,7 @@ def downloadWeight(voiceChangerParams: VoiceChangerParams):
                 "position": 7,
             }
         )
-    if os.path.exists(rmvpe) is False:
+    if not is_usable(rmvpe):
         downloadParams.append(
             {
                 "url": "https://huggingface.co/wok000/weights/resolve/main/rmvpe/rmvpe_20231006.pt",
@@ -120,7 +120,7 @@ def downloadWeight(voiceChangerParams: VoiceChangerParams):
                 "position": 8,
             }
         )
-    if os.path.exists(rmvpe_onnx) is False:
+    if not is_usable(rmvpe_onnx):
         downloadParams.append(
             {
                 "url": "https://huggingface.co/wok000/weights_gpl/resolve/main/rmvpe/rmvpe_20231006.onnx",
@@ -129,7 +129,7 @@ def downloadWeight(voiceChangerParams: VoiceChangerParams):
             }
         )
 
-    if os.path.exists(whisper_tiny) is False:
+    if not is_usable(whisper_tiny):
         downloadParams.append(
             {
                 "url": "https://openaipublic.azureedge.net/main/whisper/models/65147644a518d12f04e32d6f3b26facc3f8dd46e5390956a9424a650c0ce22b9/tiny.pt",
@@ -141,14 +141,14 @@ def downloadWeight(voiceChangerParams: VoiceChangerParams):
     with ThreadPoolExecutor() as pool:
         pool.map(download, downloadParams)
 
-    if os.path.exists(hubert_base) is False or os.path.exists(hubert_base_jp) is False or os.path.exists(hubert_soft) is False or os.path.exists(nsf_hifigan) is False or os.path.exists(nsf_hifigan_config) is False:
-        raise WeightDownladException()
-
-    # ファイルサイズをログに書き込む。（デバッグ用）
-    for weight in weight_files:
-        if os.path.exists(weight):
-            file_size = os.path.getsize(weight)
-            logger.debug(f"weight file [{weight}]: {file_size}")
-        else:
+    # Only what RVC needs is fatal. The others serve other model types (Japanese HuBERT,
+    # DDSP-SVC, Beatrice...); one of them (rinna) now answers 401, which failed every first run.
+    essential = [hubert_base, content_vec_500_onnx, rmvpe, rmvpe_onnx]
+    for weight in weight_files + [nsf_hifigan_config, nsf_hifigan_onnx]:
+        if is_usable(weight):
+            logger.debug(f"weight file [{weight}]: {os.path.getsize(weight)}")
+        elif weight in essential:
             logger.warning(f"weight file is missing. {weight}")
             raise WeightDownladException()
+        else:
+            logger.warning(f"optional weight file is missing, models that need it won't load: {weight}")

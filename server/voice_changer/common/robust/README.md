@@ -1,4 +1,4 @@
-# Noise-robust front end (RVC)
+# Noise-robust front end (RVC and LLVC)
 
 Cleans the microphone signal before RVC turns it into a voice:
 
@@ -10,14 +10,37 @@ Everything here runs on the CPU (about 8% of one core in total), so it does not 
 GPU time away from the conversion. It works in both client-audio and server-audio mode;
 the browser's Sup1/Sup2 switches only apply to client audio.
 
+LLVC uses the same front end and settings, except that `denoiseStrong` defaults to on: the
+pretrained LLVC model loses voicing on noisy input, which sounds choppy, and DeepFilterNet3 in
+front of it fixed that on a real recording (Whisper word error rate 2.3%). LLVC keeps running
+while the VAD gate is closed (it is a streaming model), it just hears silence.
+
 | Setting (UI) | Key | Default | What it does |
 |---|---|---|---|
-| Denoise checkbox | `denoise` | on | GTCRN speech enhancement on the input. Adds 32 ms of latency |
+| Denoise checkbox | `denoise` | on | 85 Hz high-pass (removes fan/AC/desk rumble) + GTCRN speech enhancement. Adds 32 ms of latency |
+| Strong | `denoiseStrong` | off | Use DeepFilterNet3 instead of GTCRN: about 9 dB more noise removed on a real rumble recording, about 9 ms per block on an RTX 3090 (13-18 ms on CPU). Preloaded in the background when a voice loads and shared between voices; `VC_DFN_MODEL_DIR` points it at bundled weights. Falls back to GTCRN if `deepfilternet` or its weights are missing |
 | Denoise slider | `denoiseStrength` | 1.0 | Mix between raw mic (0) and fully denoised (1). Lower it if your voice sounds thin |
-| VAD checkbox | `vad` | on | Mutes the output, and skips inference, while you are not talking |
-| VAD slider | `vadThreshold` | 0.5 | Speech probability needed to open the gate. Raise it in loud rooms, lower it if word starts get cut |
-| — | `vadHangoverMs` | 300 | How long the gate stays open after speech stops |
+| VAD checkbox | `vad` | on | Mutes the output, and skips inference (RVC), while you are not talking |
+| VAD slider | `vadThreshold` | 0.3 | Speech probability needed to open the gate. Raise it in loud rooms, lower it (or turn VAD off) if words get cut |
+| — | `vadHangoverMs` | 500 | How long the gate stays open after speech stops |
 | F0 Fix | `f0Stabilize` | on | Removes pitch blips, bridges short dropouts and folds octave jumps |
+| — | `f0Floor` | on | Lifts frames more than about 7.5 semitones below your usual pitch (the median of the last few seconds) up an octave. Dropping the voice at the end of a phrase otherwise made that word come out an octave low |
+
+Each voice (model slot) remembers its own pitch, index, protect and noise settings in
+`stored_setting.json`, so they survive a restart. The "Perfil" menu sets the noise controls in
+one click: Casa tranquila (GTCRN, VAD 0.3), Con ruido (Strong, VAD 0.4), Mucho ruido (Strong, VAD 0.5).
+
+The "Asistente" button (next to Perfil) records 10 s of the room and 15 s of the user reading,
+and `POST /calibrate` (`Calibration.py`) suggests the settings: Strong when the voice is less than
+35 dB above the noise, the lowest VAD threshold (0.3-0.5) that keeps the room out (measured
+behind the denoiser it recommends), and a pitch shift from the user's median pitch to a typical
+female (280 Hz) or male (125 Hz) voice, rounded to the octave when within a semitone of it. It also
+flags a quiet or clipping mic, low rumble and speech-like background noise.
+`POST /convert_clip` converts the reading block by block so it can be heard before and after.
+
+RVC runs once when a voice loads and again on the first silent block at a new block size, and
+ONNX on CUDA uses `cudnn_conv_algo_search=HEURISTIC`. With the default exhaustive search the
+first block after a voice switch took 5.6 s on an RTX 3090; now it takes about 0.12 s.
 
 ## Models
 
@@ -28,12 +51,16 @@ Both models are bundled in `models/` (MIT licensed, see the LICENSE files):
 
 If either fails to load, the server logs a warning and carries on without it.
 
+Silero's confidence depends on input level, so the VAD hears a copy normalised towards a
+0.5 peak (up to +24 dB, 3 s release). The audio sent to the model is not changed.
+
 ## Measuring
 
 ```
 cd server
 python tools/robustness_bench.py --clean my_voice.wav            # synthetic fan/keyboard/babble/white noise
 python tools/robustness_bench.py --clean my_voice.wav --noise my_room.wav --out bench_out
+python tools/robustness_bench.py --clean my_voice.wav --peak-db -26 --vad-threshold 0.3   # quiet mic
 python -m pytest tests -q
 ```
 

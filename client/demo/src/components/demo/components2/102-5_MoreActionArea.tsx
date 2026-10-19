@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { useGuiState } from "../001_GuiStateProvider";
 import { useAppState } from "../../../001_provider/001_AppStateProvider";
+import { setUiMode } from "../noiseProfiles";
 
 export type MoreActionAreaProps = {};
 
@@ -38,6 +39,9 @@ export const MoreActionArea = (_props: MoreActionAreaProps) => {
                             </div>
                             <div onClick={onOpenGetClientInformationClicked} className="config-sub-area-button">
                                 Client Info
+                            </div>
+                            <div onClick={() => setUiMode("simple")} className="config-sub-area-button">
+                                Modo fácil
                             </div>
                         </div>
                     </div>

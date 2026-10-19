@@ -82,7 +82,7 @@ def mix_at_snr(clean: np.ndarray, noise: np.ndarray, snr_db: float) -> np.ndarra
     gain = np.sqrt(speech_power / (noise_power * 10 ** (snr_db / 10)))
     mix = clean + gain * noise
     peak = np.abs(mix).max()
-    return (mix / peak * 0.9 if peak > 0.99 else mix).astype(np.float32)
+    return (mix / peak * np.abs(clean).max() if peak > 0.99 else mix).astype(np.float32)
 
 
 def si_sdr(est: np.ndarray, ref: np.ndarray) -> float:
@@ -100,19 +100,20 @@ def speech_mask(clean: np.ndarray) -> np.ndarray:
     return db > (db.max() - 40)
 
 
-def run_front_end(mix: np.ndarray, denoise: bool, vad: bool, chunk: int):
+def run_front_end(mix: np.ndarray, denoise: bool, vad: bool, chunk: int, vad_threshold: float = 0.3, vad_hangover_ms: float = 500, strong: bool = False):
     cond = InputConditioner()
     outs, gates = [], []
     t0 = time.perf_counter()
     for i in range(0, len(mix), chunk):
         x = mix[i : i + chunk]
-        r = cond.process(x, denoise=denoise, denoise_strength=1.0, vad=vad, vad_threshold=0.5, vad_hangover_ms=300)
+        r = cond.process(x, denoise=denoise, denoise_strength=1.0, vad=vad, vad_threshold=vad_threshold, vad_hangover_ms=vad_hangover_ms, strong=strong)
         outs.append(r.audio)
         gates.append(np.full(len(x), r.gate))
     elapsed = time.perf_counter() - t0
     out = np.concatenate(outs)
     gate = np.concatenate(gates)
-    delay = GtcrnDenoiser.LATENCY_SAMPLES if denoise else 0
+    used = cond.strong_denoiser if strong and cond.strong_denoiser is not None else GtcrnDenoiser
+    delay = used.LATENCY_SAMPLES if denoise else 0
     # undo the fixed latency so the output lines up with the clean reference
     out = np.concatenate([out[delay:], np.zeros(delay, dtype=np.float32)])
     gate = np.concatenate([gate[delay:], np.zeros(delay)])
@@ -153,12 +154,18 @@ def main():
     parser.add_argument("--noise", default=None, help="noise recording; synthetic noises if omitted")
     parser.add_argument("--snr", default="0,5,10,20")
     parser.add_argument("--chunk-ms", type=float, default=100)
+    parser.add_argument("--peak-db", type=float, default=None, help="rescale the clean speech to this peak level (dBFS), e.g. -14 for a quiet mic")
+    parser.add_argument("--vad-threshold", type=float, default=0.3)
+    parser.add_argument("--vad-hangover-ms", type=float, default=500)
+    parser.add_argument("--strong", action="store_true", help="use DeepFilterNet3 instead of GTCRN (needs deepfilternet)")
     parser.add_argument("--no-f0", action="store_true", help="skip pitch metrics (needs torchfcpe)")
     parser.add_argument("--out", default=None, help="write the mixed/processed wavs here")
     args = parser.parse_args()
 
     rng = np.random.default_rng(0)
     clean = load_mono_16k(args.clean)
+    if args.peak_db is not None:
+        clean = (clean / (np.abs(clean).max() + 1e-9) * 10 ** (args.peak_db / 20)).astype(np.float32)
     # pad with silence so gate leakage is measured on real pauses
     pad = np.zeros(SR, dtype=np.float32)
     clean = np.concatenate([pad, clean, pad])
@@ -188,7 +195,7 @@ def main():
             mix = mix_at_snr(clean, noise, snr)
             modes = [("raw", False, False, False), ("denoise", True, False, False), ("denoise+vad", True, True, False), ("denoise+vad+f0fix", True, True, True)]
             for label, dn, vd, fix in modes:
-                out, gate, rtf = run_front_end(mix, dn, vd, chunk)
+                out, gate, rtf = run_front_end(mix, dn, vd, chunk, args.vad_threshold, args.vad_hangover_ms, args.strong)
                 sdr = si_sdr(out * gate, clean)
                 g_recall = float(np.mean(gate[sample_mask] > 0))
                 g_leak = float(np.mean(gate[~sample_mask] > 0))

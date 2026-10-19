@@ -8,6 +8,7 @@ import { AdvancedSettingDialog } from "./906_AdvancedSettingDialog";
 import { GetServerInfomationDialog } from "./907_GetServerInfomationDialog";
 import { GetClientInfomationDialog } from "./908_GetClientInfomationDialog";
 import { EnablePassThroughDialog } from "./909_EnablePassThroughDialog";
+import { CalibrationDialog } from "./913_CalibrationDialog";
 
 export const Dialogs = () => {
     const guiState = useGuiState();
@@ -21,6 +22,7 @@ export const Dialogs = () => {
             {guiState.stateControls.showGetServerInformationCheckbox.trigger}
             {guiState.stateControls.showGetClientInformationCheckbox.trigger}
             {guiState.stateControls.showEnablePassThroughDialogCheckbox.trigger}
+            {guiState.stateControls.showCalibrationCheckbox.trigger}
             <div className="dialog-container" id="dialog">
                 {guiState.stateControls.showWaitingCheckbox.trigger}
                 <WaitingDialog></WaitingDialog>
@@ -38,6 +40,8 @@ export const Dialogs = () => {
                 <GetClientInfomationDialog></GetClientInfomationDialog>
                 {guiState.stateControls.showEnablePassThroughDialogCheckbox.trigger}
                 <EnablePassThroughDialog></EnablePassThroughDialog>
+                {guiState.stateControls.showCalibrationCheckbox.trigger}
+                <CalibrationDialog></CalibrationDialog>
             </div>
         </div>
     );

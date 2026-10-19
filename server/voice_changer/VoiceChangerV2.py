@@ -133,7 +133,9 @@ class VoiceChangerV2(VoiceChangerIF):
             self.voiceChanger.setSamplingRate(self.settings.inputSampleRate, self.settings.outputSampleRate)
 
         if key in self.settings.intData:
-            setattr(self.settings, key, int(val))
+            # the client sends numbers as strings ("1"), so compare the converted value below
+            val = int(val)
+            setattr(self.settings, key, val)
             if key == "crossFadeOffsetRate" or key == "crossFadeEndRate":
                 self.crossfadeSize = 0
             if key == "recordIO" and val == 1:

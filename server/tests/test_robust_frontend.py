@@ -14,7 +14,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from voice_changer.common.robust.GtcrnDenoiser import GtcrnDenoiser  # noqa: E402
 from voice_changer.common.robust.InputConditioner import GTCRN_MODEL, SILERO_MODEL, InputConditioner  # noqa: E402
-from voice_changer.common.robust.PitchStabilizer import f0_to_coarse, stabilize_f0  # noqa: E402
+from voice_changer.common.robust.PitchStabilizer import PitchFloor, f0_to_coarse, stabilize_f0  # noqa: E402
 from voice_changer.common.robust.SileroVad import SileroVad  # noqa: E402
 
 SR = 16000
@@ -78,14 +78,14 @@ class TestVad:
 
 class TestConditioner:
     def test_gate_stays_closed_on_silence(self):
-        c = InputConditioner()
+        c = InputConditioner(preload_strong=False)
         for _ in range(20):
             r = c.process(np.zeros(1600, dtype=np.float32), True, 1.0, True, 0.5, 300)
             assert r.audio.shape[0] == 1600
             assert r.gate == 0.0
 
     def test_gate_hangover(self):
-        c = InputConditioner()
+        c = InputConditioner(preload_strong=False)
         c.gate_open = True
         c.hangover_left = 300
         gates = [c.process(np.zeros(1600, dtype=np.float32), False, 1.0, True, 0.5, 300).gate for _ in range(6)]
@@ -93,8 +93,111 @@ class TestConditioner:
         assert gates[:3] == [1.0, 1.0, 1.0]
         assert gates[-1] == 0.0
 
+    def test_vad_hears_quiet_input_louder_but_output_is_untouched(self):
+        c = InputConditioner(preload_strong=False)
+        quiet = tone(0.1, amp=0.05)
+        boosted = c._vad_input(quiet)
+        assert np.abs(boosted).max() == pytest.approx(0.5, rel=0.01)
+        r = c.process(quiet, False, 1.0, True, 0.3, 500)
+        np.testing.assert_array_equal(r.audio, quiet)
+
+    def test_vad_gain_is_capped_for_near_silence(self):
+        c = InputConditioner(preload_strong=False)
+        hiss = tone(0.1, amp=0.001)
+        assert np.abs(c._vad_input(hiss)).max() <= 0.001 * 16.0 + 1e-6
+
+    def test_vad_gain_releases_slowly_in_pauses(self):
+        c = InputConditioner(preload_strong=False)
+        c._vad_input(tone(0.1, amp=0.4))
+        # a 100 ms pause right after loud speech should not be boosted to full scale
+        assert np.abs(c._vad_input(tone(0.1, amp=0.01))).max() < 0.05
+
+    def test_concurrent_calls_do_not_corrupt_state(self):
+        import threading
+
+        c = InputConditioner(preload_strong=False)
+        errors = []
+
+        def worker(n):
+            x = np.random.default_rng(n).standard_normal(n).astype(np.float32) * 0.1
+            try:
+                for _ in range(30):
+                    assert c.process(x, True, 1.0, True, 0.3, 500).audio.shape[0] == n
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=worker, args=(n,)) for n in (4438, 8192, 1600)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert errors == []
+
+    def test_highpass_removes_rumble_but_keeps_voice(self):
+        def level_after(hz):
+            c = InputConditioner(preload_strong=False)
+            c.denoiser = None  # isolate the high-pass
+            x = tone(1.0, hz=hz, amp=0.3)
+            out = np.concatenate([c.process(x[i : i + 1600], True, 1.0, False, 0.3, 500).audio for i in range(0, len(x), 1600)])
+            return np.std(out[SR // 2 :]) / np.std(x[SR // 2 :])
+
+        assert level_after(40) < 0.1  # -20 dB
+        assert level_after(250) > 0.95
+
+    def test_strong_mode_uses_deepfilternet_when_loaded(self):
+        c = InputConditioner(preload_strong=False)  # the real model must not replace the fake
+        calls = []
+
+        class Fake:
+            def process(self, x, strength):
+                calls.append(len(x))
+                return x
+
+        c.strong_denoiser = Fake()
+        c.process(np.zeros(1600, dtype=np.float32), True, 1.0, False, 0.3, 500, strong=True)
+        assert calls == [1600]
+
+    def test_strong_mode_falls_back_to_gtcrn(self, monkeypatch):
+        import voice_changer.common.robust.DfnDenoiser as dfn_module
+
+        def broken(self):
+            raise SystemExit(1)  # what df does when it can't download the weights
+
+        monkeypatch.setattr(dfn_module.DfnDenoiser, "__init__", broken)
+        c = InputConditioner(preload_strong=False)
+        r = c.process(np.zeros(1600, dtype=np.float32), True, 1.0, False, 0.3, 500, strong=True)
+        assert r.audio.shape[0] == 1600
+        c.strong_loader.join()
+        assert c.strong_failed and c.strong_denoiser is None
+
+    def test_strong_mode_loads_in_background(self, monkeypatch):
+        import time
+
+        import voice_changer.common.robust.DfnDenoiser as dfn_module
+
+        calls = []
+
+        def slow_init(self):
+            time.sleep(0.5)
+            self.device = "cpu"
+            self.reset()
+
+        monkeypatch.setattr(dfn_module.DfnDenoiser, "__init__", slow_init)
+        monkeypatch.setattr(dfn_module.DfnDenoiser, "process", lambda self, x, strength=1.0: calls.append(len(x)) or x)
+        c = InputConditioner(preload_strong=False)
+        x = np.zeros(1600, dtype=np.float32)
+        t0 = time.perf_counter()
+        c.process(x, True, 1.0, False, 0.3, 500, strong=True)
+        assert time.perf_counter() - t0 < 0.3  # GTCRN answers while the model loads
+        assert calls == []
+        c.strong_loader.join()
+        assert len(calls) == 2  # warm-up calls, off the audio path
+        calls.clear()
+        c.process(x, True, 1.0, False, 0.3, 500, strong=True)
+        assert calls == [1600]
+
     def test_everything_off_is_passthrough(self):
-        c = InputConditioner()
+        c = InputConditioner(preload_strong=False)
         x = np.random.default_rng(4).standard_normal(1600).astype(np.float32)
         r = c.process(x, False, 1.0, False, 0.5, 300)
         np.testing.assert_array_equal(r.audio, x)
@@ -140,6 +243,45 @@ class TestPitchStabilizer:
         np.testing.assert_array_equal(f0_to_coarse(f0), expected)
 
 
+class TestPitchFloor:
+    def _warm(self, pf, hz=280.0):
+        for _ in range(PitchFloor.MIN_HISTORY):
+            pf(np.full(100, hz))
+
+    def test_lifts_a_word_dropped_an_octave(self):
+        pf = PitchFloor()
+        self._warm(pf)
+        f0 = np.full(100, 280.0)
+        f0[40:60] = 172.0  # the "seis" from a real recording, after tune +12
+        out = pf(f0)
+        np.testing.assert_allclose(out[40:60], 344.0)
+        np.testing.assert_allclose(out[:40], 280.0)
+
+    def test_keeps_normal_intonation(self):
+        pf = PitchFloor()
+        self._warm(pf)
+        f0 = np.geomspace(300, 200, 100)  # a falling phrase end, 6 semitones
+        np.testing.assert_allclose(pf(f0), f0)
+
+    def test_waits_for_the_usual_pitch(self):
+        pf = PitchFloor()
+        f0 = np.full(100, 150.0)
+        np.testing.assert_allclose(pf(f0), f0)
+
+    def test_streamed_buffer_is_not_lifted_twice(self):
+        pf = PitchFloor()
+        self._warm(pf)
+        f0 = np.full(100, 172.0)
+        once = pf(f0)
+        np.testing.assert_allclose(pf(once), once)
+
+    def test_unvoiced_frames_stay_unvoiced(self):
+        pf = PitchFloor()
+        self._warm(pf)
+        f0 = np.zeros(50)
+        assert pf(f0).max() == 0
+
+
 class _StubPipeline:
     """Stands in for the real RVC pipeline (no model weights needed)."""
 
@@ -177,7 +319,8 @@ def rvc():
     m.audio_buffer = m.pitchf_buffer = m.feature_buffer = None
     m.prevVol = 0.0
     m.prevGate = 0.0
-    m.inputConditioner = InputConditioner()
+    m.warmSize = None
+    m.inputConditioner = InputConditioner(preload_strong=False)
     m.pipeline = _StubPipeline(slot.samplingRate)
     m.setSamplingRate(48000, 48000)
     return m
@@ -186,8 +329,21 @@ def rvc():
 class TestRvcIntegration:
     def test_silence_skips_inference(self, rvc):
         for _ in range(10):
+            out = rvc.inference(np.zeros(4800, dtype=np.float32), 1024, 576)
+            assert not out.any()
+        # once, to warm up at this block size; then never while nobody speaks
+        assert rvc.pipeline.calls == 1
+
+    def test_silence_warms_up_again_only_when_the_block_size_changes(self, rvc):
+        rvc._warmup()
+        warm = rvc.pipeline.calls
+        for _ in range(3):
             rvc.inference(np.zeros(4800, dtype=np.float32), 1024, 576)
-        assert rvc.pipeline.calls == 0
+        assert rvc.pipeline.calls == warm  # the warm-up already ran at this size
+        rvc.settings.extraConvertSize = 1024 * 32
+        for _ in range(3):
+            rvc.inference(np.zeros(4800, dtype=np.float32), 1024, 576)
+        assert rvc.pipeline.calls == warm + 1
 
     def test_gate_off_runs_inference_every_block(self, rvc):
         rvc.settings.vad = 0
@@ -197,8 +353,20 @@ class TestRvcIntegration:
             assert out is not None and out.shape[0] > 4800
         assert rvc.pipeline.calls == 5
 
+    def test_silent_block_matches_converted_block_length(self, rvc):
+        silent = rvc.inference(np.zeros(4800, dtype=np.float32), 1024, 576)
+        rvc.settings.vad = 0
+        voiced = rvc.inference((np.random.default_rng(7).standard_normal(4800) * 3000).astype(np.float32), 1024, 576)
+        assert silent.shape[0] == voiced.shape[0]
+
+    def test_warmup_runs_inference_and_leaves_state_clean(self, rvc):
+        rvc._warmup()
+        assert rvc.pipeline.calls == 2
+        assert rvc.settings.vad == 1 and rvc.audio_buffer is None and rvc.prevGate == 0.0
+
     def test_fade_out_when_speech_stops(self, rvc):
         rvc.settings.vad = 1
+        rvc.settings.vadThreshold = 1.0  # noise input must close the gate whatever the VAD scores it
         rvc.inputConditioner.gate_open = True
         rvc.inputConditioner.hangover_left = 0
         rvc.prevGate = 1.0
@@ -206,3 +374,32 @@ class TestRvcIntegration:
         assert rvc.pipeline.calls == 1
         assert abs(out[0]) > abs(out[-1])  # ramps down to silence
         assert abs(out[-1]) < 1e-6
+
+
+class TestDeepFilterNet:
+    @pytest.fixture(scope="class")
+    def dfn(self):
+        try:
+            from voice_changer.common.robust.DfnDenoiser import DfnDenoiser
+
+            return DfnDenoiser()
+        except (Exception, SystemExit) as e:  # package or model weights not available
+            pytest.skip(f"DeepFilterNet3 unavailable: {e}")
+
+    def test_output_length_and_noise_reduction(self, dfn):
+        dfn.reset()
+        noise = np.random.default_rng(8).standard_normal(2 * SR).astype(np.float32) * 0.05
+        out = run_chunks(dfn.process, noise, [1280, 1600, 777])
+        assert out.shape == noise.shape
+        assert np.std(out[SR // 2 :]) < 0.3 * np.std(noise[SR // 2 :])
+
+    def test_switching_in_after_push_matches_running_all_along(self, dfn):
+        x = np.random.default_rng(9).standard_normal(2 * SR).astype(np.float32) * 0.05
+        chunks = [x[i : i + 1600] for i in range(0, len(x), 1600)]
+        dfn.reset()
+        always = [dfn.process(c) for c in chunks]
+        dfn.reset()
+        for c in chunks[:10]:
+            dfn.push(c)
+        switched = [dfn.process(c) for c in chunks[10:]]
+        np.testing.assert_allclose(switched[0], always[10], atol=1e-4)

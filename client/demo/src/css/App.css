@@ -1903,3 +1903,138 @@ audio::-webkit-media-controls-overlay-enclosure{
     height: 19rem;
     border: none;
 }
+
+/* simple screen (920_SimpleScreen.tsx) */
+.simple-screen {
+    max-width: 44rem;
+    margin: 0 auto;
+    padding: 1rem;
+    color: var(--text-color);
+}
+.simple-header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: space-between;
+    align-items: baseline;
+}
+.simple-credits {
+    font-size: 0.75rem;
+    opacity: 0.7;
+    margin-bottom: 1rem;
+}
+.simple-devices {
+    padding: 0;
+    flex-wrap: wrap;
+}
+.simple-screen .model-slot-tile-container,
+.simple-screen .model-slot-tile-container-selected {
+    width: 7rem;
+    height: auto;
+    padding-bottom: 6px;
+    cursor: pointer;
+}
+.simple-screen .model-slot-tiles-container {
+    max-height: 20rem;
+    overflow-y: auto;
+    gap: 6px;
+}
+/* the tile is tall enough for its name: long names (Japanese plus "(onnx)") overlapped the next row */
+.simple-screen .model-slot-tile-dscription {
+    font-size: 0.85rem;
+    white-space: normal;
+    word-break: break-word;
+    text-align: center;
+    padding: 4px 4px 0 4px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.simple-screen .model-slot-tile-vctype {
+    display: none;
+}
+.simple-title {
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: var(--company-color2);
+}
+.simple-link {
+    cursor: pointer;
+    color: var(--company-color1);
+    text-decoration: underline;
+}
+.simple-disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.simple-card {
+    border: 1px solid var(--dialog-input-border-color);
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    background: var(--dialog-background-color);
+}
+.simple-card-title {
+    font-weight: 600;
+    margin-bottom: 0.6rem;
+    color: var(--company-color2);
+}
+.simple-power {
+    cursor: pointer;
+    user-select: none;
+    text-align: center;
+    font-size: 1.5rem;
+    font-weight: 600;
+    padding: 1rem;
+    border-radius: 12px;
+    color: #fff;
+    background: var(--company-color1);
+}
+.simple-power-on {
+    background: var(--dialog-cancel-button-color);
+}
+.simple-hint {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    opacity: 0.8;
+}
+.simple-attention {
+    font-size: 1rem;
+    font-weight: 700;
+    opacity: 1;
+}
+.simple-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.5rem 0;
+    flex-wrap: wrap;
+}
+.simple-row input[type="range"] {
+    flex: 1;
+    min-width: 8rem;
+}
+.simple-label {
+    width: 5rem;
+    font-weight: 600;
+}
+.simple-end {
+    font-size: 0.8rem;
+    opacity: 0.7;
+}
+.simple-value {
+    width: 2.5rem;
+    text-align: right;
+}
+.simple-buttons {
+    margin-top: 0.8rem;
+}
+.simple-button {
+    display: inline-block;
+    cursor: pointer;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    border: 1px solid var(--company-color1);
+    color: var(--company-color1);
+}

@@ -54,6 +54,7 @@ class RVCr2(VoiceChangerModel):
         self.feature_buffer: FeatureInOut | None = None
         self.prevVol = 0.0
         self.prevGate = 0.0
+        self.warmSize: tuple[int, int] | None = None  # (convertSize, outSize) the pipeline last ran at
         self.inputConditioner = InputConditioner()
         self.slotInfo = slotInfo
         # self.initialize()
@@ -72,7 +73,33 @@ class RVCr2(VoiceChangerModel):
         self.settings.tran = self.slotInfo.defaultTune
         self.settings.indexRatio = self.slotInfo.defaultIndexRatio
         self.settings.protect = self.slotInfo.defaultProtect
+        self._warmup()
         logger.info("[Voice Changer] [RVC] Initializing... done")
+
+    def _warmup(self):
+        """Run the pipeline twice on quiet noise. The VAD gate skips inference until the first
+        word, so without this the first cold CUDA run (about 2.7 s on an RTX 3090) landed mid-speech."""
+        saved = (self.settings.vad, self.settings.silentThreshold, getattr(self, "inputSampleRate", None), getattr(self, "outputSampleRate", None))
+        try:
+            self.settings.vad = 0
+            self.settings.silentThreshold = 0.0
+            if saved[2] is None:
+                self.setSamplingRate(48000, 48000)
+            noise = (np.random.default_rng(0).standard_normal(4800) * 30).astype(np.float32)
+            for _ in range(2):
+                self.inference(noise, 1024, 576)
+        except Exception as e:
+            logger.warning(f"[Voice Changer] [RVC] warm-up failed, continuing: {e}")
+        finally:
+            self.settings.vad, self.settings.silentThreshold = saved[0], saved[1]
+            if saved[2] is not None:
+                self.setSamplingRate(saved[2], saved[3])
+            self.audio_buffer = self.pitchf_buffer = self.feature_buffer = None
+            self.prevVol = 0.0
+            self.prevGate = 0.0
+            self.inputConditioner.reset()
+            if hasattr(self.pipeline, "pitchFloor"):
+                self.pipeline.pitchFloor.reset()  # the warm-up noise is not the speaker's pitch
 
     def setSamplingRate(self, inputSampleRate, outputSampleRate):
         self.inputSampleRate = inputSampleRate
@@ -206,6 +233,7 @@ class RVCr2(VoiceChangerModel):
             receivedData.astype(np.float32) / 32768.0,
             denoise=self.settings.denoise == 1,
             denoise_strength=self.settings.denoiseStrength,
+            strong=self.settings.denoiseStrong == 1,
             vad=self.settings.vad == 1,
             vad_threshold=self.settings.vadThreshold,
             vad_hangover_ms=self.settings.vadHangoverMs,
@@ -225,43 +253,29 @@ class RVCr2(VoiceChangerModel):
         vol = data[4]
         outSize = data[5]
 
-        if vol < self.settings.silentThreshold:
-            return np.zeros(convertSize).astype(np.int16) * np.sqrt(vol)
-        if gate == 0.0 and prevGate == 0.0:
-            # no speech: skip inference but keep the buffers rolling for when speech resumes
-            return np.zeros(convertSize).astype(np.int16)
-
-        device = self.pipeline.device
-
-        audio = torch.from_numpy(audio).to(device=device, dtype=torch.float32)
-        repeat = 1 if self.settings.rvcQuality else 0
-        sid = self.settings.dstId
-        f0_up_key = self.settings.tran
-        index_rate = self.settings.indexRatio
-        protect = self.settings.protect
-
-        if_f0 = 1 if self.slotInfo.f0 else 0
-        self.pipeline.f0Stabilize = self.settings.f0Stabilize == 1
-        embOutputLayer = self.slotInfo.embOutputLayer
-        useFinalProj = self.slotInfo.useFinalProj
+        # silent blocks must be as long as converted ones, or the SOLA crossfade misaligns
+        silentSize = int(outSize * self.outputSampleRate / self.slotInfo.samplingRate)
+        silent = vol < self.settings.silentThreshold
+        # no speech: skip inference but keep the buffers rolling for when speech resumes
+        gated = gate == 0.0 and prevGate == 0.0
+        if silent or gated:
+            if self.warmSize != (convertSize, outSize):
+                # Kernels are tuned per input size, so the first word at a new size (after a voice
+                # switch, 5.7 s on an RTX 3090) waited for that. Pay it now, while nobody speaks.
+                try:
+                    self._exec(audio, pitchf, feature, outSize)
+                except Exception as e:
+                    logger.warning(f"[Voice Changer] [RVC] warm-up at the live size failed, continuing: {e}")
+                self.warmSize = (convertSize, outSize)
+                if hasattr(self.pipeline, "pitchFloor"):
+                    self.pipeline.pitchFloor.reset()
+            if silent:
+                return np.zeros(silentSize).astype(np.int16) * np.sqrt(vol)
+            return np.zeros(silentSize).astype(np.int16)
 
         try:
-            audio_out, self.pitchf_buffer, self.feature_buffer = self.pipeline.exec(
-                sid,
-                audio,
-                pitchf,
-                feature,
-                f0_up_key,
-                index_rate,
-                if_f0,
-                # 0,
-                self.settings.extraConvertSize / self.inputSampleRate if self.settings.silenceFront else 0.0,  # extaraDataSizeの秒数。入力のサンプリングレートで算出
-                embOutputLayer,
-                useFinalProj,
-                repeat,
-                protect,
-                outSize,
-            )
+            audio_out = self._exec(audio, pitchf, feature, outSize)
+            self.warmSize = (convertSize, outSize)
             # result = audio_out.detach().cpu().numpy() * np.sqrt(vol)
             result = audio_out[-outSize:].detach().cpu().numpy() * np.sqrt(vol)
 
@@ -286,6 +300,41 @@ class RVCr2(VoiceChangerModel):
             # raise e
 
         return
+
+    def _exec(self, audio, pitchf, feature, outSize):
+        """Runs the pipeline on the prepared buffers and keeps its rolling pitch and features."""
+        device = self.pipeline.device
+
+        audio = torch.from_numpy(audio).to(device=device, dtype=torch.float32)
+        repeat = 1 if self.settings.rvcQuality else 0
+        sid = self.settings.dstId
+        f0_up_key = self.settings.tran
+        index_rate = self.settings.indexRatio
+        protect = self.settings.protect
+
+        if_f0 = 1 if self.slotInfo.f0 else 0
+        self.pipeline.f0Stabilize = self.settings.f0Stabilize == 1
+        self.pipeline.f0Floor = self.settings.f0Floor == 1
+        embOutputLayer = self.slotInfo.embOutputLayer
+        useFinalProj = self.slotInfo.useFinalProj
+
+        audio_out, self.pitchf_buffer, self.feature_buffer = self.pipeline.exec(
+            sid,
+            audio,
+            pitchf,
+            feature,
+            f0_up_key,
+            index_rate,
+            if_f0,
+            # 0,
+            self.settings.extraConvertSize / self.inputSampleRate if self.settings.silenceFront else 0.0,  # extaraDataSizeの秒数。入力のサンプリングレートで算出
+            embOutputLayer,
+            useFinalProj,
+            repeat,
+            protect,
+            outSize,
+        )
+        return audio_out
 
     def __del__(self):
         del self.pipeline

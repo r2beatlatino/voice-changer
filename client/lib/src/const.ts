@@ -128,6 +128,7 @@ export const ServerSettingKey = {
 
     denoise: "denoise",
     denoiseStrength: "denoiseStrength",
+    denoiseStrong: "denoiseStrong",
     vad: "vad",
     vadThreshold: "vadThreshold",
     vadHangoverMs: "vadHangoverMs",
@@ -197,6 +198,7 @@ export type VoiceChangerServerSetting = {
 
     denoise: number; // RVC, server-side noise suppression 0:off, 1:GTCRN
     denoiseStrength: number; // RVC, 0.0-1.0
+    denoiseStrong: number; // RVC, 0:GTCRN, 1:DeepFilterNet3
     vad: number; // RVC, voice activity gate 0:off, 1:on
     vadThreshold: number; // RVC, 0.0-1.0
     vadHangoverMs: number; // RVC
@@ -436,9 +438,10 @@ export const DefaultServerSetting: ServerInfo = {
     modelSlotIndex: 0,
     denoise: 1,
     denoiseStrength: 1.0,
+    denoiseStrong: 0,
     vad: 1,
-    vadThreshold: 0.5,
-    vadHangoverMs: 300,
+    vadThreshold: 0.3,
+    vadHangoverMs: 500,
     f0Stabilize: 1,
     sampleModels: [],
     gpus: [],

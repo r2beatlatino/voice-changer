@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useState, useRef } from "react";
 import { ReactNode } from "react";
 import { useAppRoot } from "../../001_provider/001_AppRootProvider";
 import { StateControlCheckbox, useStateControlCheckbox } from "../../hooks/useStateControlCheckbox";
+import { getUiMode } from "./noiseProfiles";
 import { useAppState } from "../../001_provider/001_AppStateProvider";
 
 export const OpenServerControlCheckbox = "open-server-control-checkbox";
@@ -25,6 +26,7 @@ export const OpenEnablePassThroughDialogCheckbox = "open-enable-pass-through-dia
 
 export const OpenTextInputDialogCheckbox = "open-text-input-dialog-checkbox";
 export const OpenShowLicenseDialogCheckbox = "open-show-license-dialog-checkbox";
+export const OpenCalibrationDialogCheckbox = "open-calibration-dialog-checkbox";
 
 type Props = {
     children: ReactNode;
@@ -51,6 +53,7 @@ export type StateControls = {
     showEnablePassThroughDialogCheckbox: StateControlCheckbox;
     showTextInputCheckbox: StateControlCheckbox;
     showLicenseCheckbox: StateControlCheckbox;
+    showCalibrationCheckbox: StateControlCheckbox;
 };
 
 type GuiStateAndMethod = {
@@ -271,6 +274,7 @@ export const GuiStateProvider = ({ children }: Props) => {
 
     const showTextInputCheckbox = useStateControlCheckbox(OpenTextInputDialogCheckbox);
     const showLicenseCheckbox = useStateControlCheckbox(OpenShowLicenseDialogCheckbox);
+    const showCalibrationCheckbox = useStateControlCheckbox(OpenCalibrationDialogCheckbox);
 
     useEffect(() => {
         openServerControlCheckbox.updateState(true);
@@ -294,6 +298,7 @@ export const GuiStateProvider = ({ children }: Props) => {
 
         showTextInputCheckbox.updateState(false);
         showLicenseCheckbox.updateState(false);
+        showCalibrationCheckbox.updateState(false);
     }, []);
 
     useEffect(() => {
@@ -306,7 +311,10 @@ export const GuiStateProvider = ({ children }: Props) => {
             // }
 
             document.getElementById("dialog")?.classList.add("dialog-container-show");
-            showStartingNoticeCheckbox.updateState(true);
+            // the simple screen starts on its own button and links the credits instead
+            if (getUiMode() != "simple") {
+                showStartingNoticeCheckbox.updateState(true);
+            }
             document.getElementById("dialog2")?.classList.add("dialog-container-show");
         };
         setTimeout(show);
@@ -353,6 +361,7 @@ export const GuiStateProvider = ({ children }: Props) => {
 
             showTextInputCheckbox,
             showLicenseCheckbox,
+            showCalibrationCheckbox,
         },
         isConverting,
         setIsConverting,

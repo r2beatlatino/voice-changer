@@ -2,6 +2,8 @@ import React, { useMemo } from "react";
 import { useAppState } from "../../../001_provider/001_AppStateProvider";
 import { F0Detector } from "@dannadori/voice-changer-client-js";
 import { useAppRoot } from "../../../001_provider/001_AppRootProvider";
+import { useGuiState } from "../001_GuiStateProvider";
+import { NOISE_PROFILES, currentNoiseProfile, noiseProfileValues } from "../noiseProfiles";
 
 export type QualityAreaProps = {
     detectors: string[];
@@ -12,6 +14,7 @@ export const QualityArea = (props: QualityAreaProps) => {
     const { appGuiSettingState } = useAppRoot();
     const edition = appGuiSettingState.edition;
 
+    const { stateControls } = useGuiState();
     const qualityArea = useMemo(() => {
         if (!serverSetting.updateServerSettings || !setVoiceChangerClientSetting || !serverSetting.serverSetting || !setting) {
             return <></>;
@@ -112,10 +115,36 @@ export const QualityArea = (props: QualityAreaProps) => {
         );
         const s = serverSetting.serverSetting;
         const update = serverSetting.updateServerSettings;
+        const currentProfile = currentNoiseProfile(s);
         const robust = webEdition ? (
             <></>
         ) : (
             <>
+                <div className="config-sub-area-control">
+                    <div className="config-sub-area-control-title">Perfil:</div>
+                    <div className="config-sub-area-control-field">
+                        <select
+                            className="body-select"
+                            value={currentProfile}
+                            onChange={(e) => {
+                                const values = noiseProfileValues(Number(e.target.value));
+                                if (values) update({ ...s, ...values });
+                            }}
+                        >
+                            {currentProfile == -1 ? <option value={-1}>Personalizado</option> : <></>}
+                            {NOISE_PROFILES.map((p, i) => (
+                                <option key={p.name} value={i}>
+                                    {p.name}
+                                </option>
+                            ))}
+                        </select>
+                        <div className="config-sub-area-buttons">
+                            <div onClick={() => stateControls.showCalibrationCheckbox.updateState(true)} className="config-sub-area-button">
+                                Asistente
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 {slider(
                     "Denoise:",
                     s.denoise,
@@ -126,6 +155,16 @@ export const QualityArea = (props: QualityAreaProps) => {
                     0.05,
                     (v) => update({ ...s, denoiseStrength: v }),
                 )}
+                <div className="config-sub-area-control">
+                    <div className="config-sub-area-control-title">Strong:</div>
+                    <div className="config-sub-area-control-field">
+                        <div className="config-sub-area-noise-container">
+                            <div className="config-sub-area-noise-checkbox-container">
+                                <input type="checkbox" checked={s.denoiseStrong == 1} disabled={s.denoise != 1} onChange={(e) => update({ ...s, denoiseStrong: e.target.checked ? 1 : 0 })} /> <span>DeepFilterNet3</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 {slider(
                     "VAD:",
                     s.vad,
