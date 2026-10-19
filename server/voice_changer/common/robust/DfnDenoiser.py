@@ -12,6 +12,8 @@ the model's lookahead and the resampler edges out of what is returned.
 Input/output: float32 mono at 16 kHz in [-1, 1], same contract as GtcrnDenoiser.
 """
 
+import os
+
 import numpy as np
 import torch
 
@@ -28,7 +30,9 @@ class DfnDenoiser:
 
         self._enhance = enhance
         self._resample = AF.resample
-        self.model, self.df_state, _ = init_df(log_level="WARNING", log_file=None)
+        # a portable install ships the weights and points here, so nothing is downloaded
+        model_dir = os.environ.get("VC_DFN_MODEL_DIR") or None
+        self.model, self.df_state, _ = init_df(model_base_dir=model_dir, log_level="WARNING", log_file=None)
         self.model_sr = self.df_state.sr()
         self.device = next(self.model.parameters()).device
         self.reset()

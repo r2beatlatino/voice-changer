@@ -3,6 +3,7 @@ import { useAppState } from "../../../001_provider/001_AppStateProvider";
 import { F0Detector } from "@dannadori/voice-changer-client-js";
 import { useAppRoot } from "../../../001_provider/001_AppRootProvider";
 import { useGuiState } from "../001_GuiStateProvider";
+import { NOISE_PROFILES, currentNoiseProfile, noiseProfileValues } from "../noiseProfiles";
 
 export type QualityAreaProps = {
     detectors: string[];
@@ -114,13 +115,7 @@ export const QualityArea = (props: QualityAreaProps) => {
         );
         const s = serverSetting.serverSetting;
         const update = serverSetting.updateServerSettings;
-        // one-click starting points for the noise settings; tuned on a real recording with rumble
-        const profiles = [
-            { name: "Casa tranquila", denoise: 1, denoiseStrength: 1, denoiseStrong: 0, vad: 1, vadThreshold: 0.3 },
-            { name: "Con ruido", denoise: 1, denoiseStrength: 1, denoiseStrong: 1, vad: 1, vadThreshold: 0.4 },
-            { name: "Mucho ruido", denoise: 1, denoiseStrength: 1, denoiseStrong: 1, vad: 1, vadThreshold: 0.5 },
-        ];
-        const currentProfile = profiles.findIndex((p) => p.denoise == s.denoise && p.denoiseStrength == s.denoiseStrength && p.denoiseStrong == s.denoiseStrong && p.vad == s.vad && p.vadThreshold == s.vadThreshold);
+        const currentProfile = currentNoiseProfile(s);
         const robust = webEdition ? (
             <></>
         ) : (
@@ -132,14 +127,12 @@ export const QualityArea = (props: QualityAreaProps) => {
                             className="body-select"
                             value={currentProfile}
                             onChange={(e) => {
-                                const p = profiles[Number(e.target.value)];
-                                if (!p) return;
-                                const { name, ...values } = p;
-                                update({ ...s, ...values });
+                                const values = noiseProfileValues(Number(e.target.value));
+                                if (values) update({ ...s, ...values });
                             }}
                         >
                             {currentProfile == -1 ? <option value={-1}>Personalizado</option> : <></>}
-                            {profiles.map((p, i) => (
+                            {NOISE_PROFILES.map((p, i) => (
                                 <option key={p.name} value={i}>
                                     {p.name}
                                 </option>
