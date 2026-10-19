@@ -119,6 +119,10 @@ class InputConditioner:
             from voice_changer.common.robust.DfnDenoiser import DfnDenoiser
 
             dfn = DfnDenoiser()
+            # the first CUDA calls are slow (about 200 ms on an RTX 3090); pay that here, not mid-stream
+            for _ in range(2):
+                dfn.process(np.zeros(1600, dtype=np.float32))
+            dfn.reset()
             with self.lock:
                 self.strong_denoiser = dfn
             logger.info(f"[InputConditioner] DeepFilterNet3 loaded on {dfn.device}")

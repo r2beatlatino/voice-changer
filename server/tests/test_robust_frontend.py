@@ -191,6 +191,8 @@ class TestConditioner:
         assert time.perf_counter() - t0 < 0.3  # GTCRN answers while the model loads
         assert calls == []
         c.strong_loader.join()
+        assert len(calls) == 2  # warm-up calls, off the audio path
+        calls.clear()
         c.process(x, True, 1.0, False, 0.3, 500, strong=True)
         assert calls == [1600]
 
