@@ -30,6 +30,7 @@ from const import (
 )
 import subprocess
 import multiprocessing as mp
+import threading
 
 from mods.log_control import VoiceChangaerLogger
 
@@ -126,7 +127,22 @@ HOST = args.host
 PORT = args.p
 
 
+def _exit_with_parent():
+    """Windows doesn't kill child processes with their parent, so a killed launcher used to leave
+    this server running and holding the port."""
+    parent = mp.parent_process()
+    if parent is None:
+        return
+
+    def watch():
+        parent.join()
+        os._exit(0)
+
+    threading.Thread(target=watch, daemon=True).start()
+
+
 def localServer(logLevel: str = "critical", key_path: str | None = None, cert_path: str | None = None):
+    _exit_with_parent()
     try:
         uvicorn.run(
             f"{os.path.basename(__file__)[:-3]}:app_socketio",
@@ -256,7 +272,7 @@ if __name__ == "__main__":
             logger.error(f"[Voice Changer] Web Server(https) Launch Exception, {e}")
 
     else:
-        p = mp.Process(name="p", target=localServer, args=(args.logLevel,))
+        p = mp.Process(name="p", target=localServer, args=(args.logLevel,), daemon=True)
         p.start()
         try:
             if sys.platform.startswith("win"):
