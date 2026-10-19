@@ -277,7 +277,10 @@ if __name__ == "__main__":
         p = mp.Process(name="p", target=localServer, args=(args.logLevel,))
         p.start()
         try:
-            if sys.platform.startswith("win"):
+            if os.environ.get("VC_LAUNCHER") == "1":
+                # the portable launcher opens its own window and stops the server itself
+                p.join()
+            elif sys.platform.startswith("win"):
                 process = subprocess.Popen([NATIVE_CLIENT_FILE_WIN, "--disable-gpu", "-u", f"http://localhost:{PORT}/"])
                 return_code = process.wait()
                 logger.info("client closed.")

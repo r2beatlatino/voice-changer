@@ -13,9 +13,29 @@ Input/output: float32 mono at 16 kHz in [-1, 1], same contract as GtcrnDenoiser.
 """
 
 import os
+import threading
 
 import numpy as np
 import torch
+
+# The model is loaded once per process and shared: each voice gets its own denoiser, and
+# loading it again on every voice switch held the GIL for seconds while live audio ran.
+_shared = {}
+_shared_lock = threading.Lock()
+
+
+def _load_model(model_dir):
+    import df.logger
+    from df.enhance import init_df
+
+    # Its logger asks git for the package's commit: that prints "fatal: not a git repository",
+    # and on a PC without git it raises FileNotFoundError, so Strong would never load.
+    df.logger.get_commit_hash = lambda: None
+    with _shared_lock:
+        if model_dir not in _shared:
+            model, df_state, _ = init_df(model_base_dir=model_dir, log_level="WARNING", log_file=None)
+            _shared[model_dir] = (model, df_state, threading.Lock())
+        return _shared[model_dir]
 
 
 class DfnDenoiser:
@@ -25,14 +45,14 @@ class DfnDenoiser:
     LATENCY_SAMPLES = 512
 
     def __init__(self):
-        from df.enhance import enhance, init_df
+        from df.enhance import enhance
         import torchaudio.functional as AF
 
         self._enhance = enhance
         self._resample = AF.resample
         # a portable install ships the weights and points here, so nothing is downloaded
         model_dir = os.environ.get("VC_DFN_MODEL_DIR") or None
-        self.model, self.df_state, _ = init_df(model_base_dir=model_dir, log_level="WARNING", log_file=None)
+        self.model, self.df_state, self._model_lock = _load_model(model_dir)
         self.model_sr = self.df_state.sr()
         self.device = next(self.model.parameters()).device
         self.reset()
@@ -56,7 +76,7 @@ class DfnDenoiser:
         keep = int(self.CONTEXT_S * self.SR) + self.LATENCY_SAMPLES
         self.buf = np.concatenate([self.buf, x])[-max(keep, n + self.LATENCY_SAMPLES) :]
 
-        with torch.no_grad():
+        with torch.no_grad(), self._model_lock:
             audio = torch.from_numpy(self.buf)[None]
             audio = self._resample(audio, self.SR, self.model_sr)
             enh = self._enhance(self.model, self.df_state, audio)

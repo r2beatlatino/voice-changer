@@ -319,6 +319,7 @@ def rvc():
     m.audio_buffer = m.pitchf_buffer = m.feature_buffer = None
     m.prevVol = 0.0
     m.prevGate = 0.0
+    m.warmSize = None
     m.inputConditioner = InputConditioner(preload_strong=False)
     m.pipeline = _StubPipeline(slot.samplingRate)
     m.setSamplingRate(48000, 48000)
@@ -328,8 +329,21 @@ def rvc():
 class TestRvcIntegration:
     def test_silence_skips_inference(self, rvc):
         for _ in range(10):
+            out = rvc.inference(np.zeros(4800, dtype=np.float32), 1024, 576)
+            assert not out.any()
+        # once, to warm up at this block size; then never while nobody speaks
+        assert rvc.pipeline.calls == 1
+
+    def test_silence_warms_up_again_only_when_the_block_size_changes(self, rvc):
+        rvc._warmup()
+        warm = rvc.pipeline.calls
+        for _ in range(3):
             rvc.inference(np.zeros(4800, dtype=np.float32), 1024, 576)
-        assert rvc.pipeline.calls == 0
+        assert rvc.pipeline.calls == warm  # the warm-up already ran at this size
+        rvc.settings.extraConvertSize = 1024 * 32
+        for _ in range(3):
+            rvc.inference(np.zeros(4800, dtype=np.float32), 1024, 576)
+        assert rvc.pipeline.calls == warm + 1
 
     def test_gate_off_runs_inference_every_block(self, rvc):
         rvc.settings.vad = 0

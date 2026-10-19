@@ -19,6 +19,7 @@ export const SimpleScreen = () => {
         if (s.modelSlotIndex == "Beatrice-JVS") return s.modelSlots.find((v) => v.slotIndex == "Beatrice-JVS");
         return s.modelSlots[s.modelSlotIndex as number];
     }, [s.modelSlotIndex, s.modelSlots]);
+    const hasVoices = s.modelSlots.some((v) => v.modelFile && v.modelFile.length > 0);
     const hasPitch = selected && ["RVC", "so-vits-svc-40", "DDSP-SVC", "Diffusion-SVC"].includes(selected.voiceChangerType);
 
     // as in the advanced screen: the audio context can only start after a click
@@ -31,6 +32,10 @@ export const SimpleScreen = () => {
 
     const onStart = async () => {
         setWarning("");
+        if (!selected) {
+            setWarning("Primero elige una voz arriba.");
+            return;
+        }
         if (s.enableServerAudio == 0 && ["none", "-1", ""].includes(guiState.audioInputForGUI)) {
             setWarning("No hay micrófono elegido. Elígelo abajo, en «Micrófono y salida» → input.");
             return;
@@ -105,7 +110,13 @@ export const SimpleScreen = () => {
             <div className="simple-card">
                 <div className="simple-card-title">1. Elige una voz</div>
                 <ModelSlotArea simple={true}></ModelSlotArea>
-                {loaded && !selected ? <div className="simple-hint">Todavía no hay ninguna voz. Pulsa «Añadir o cambiar voces».</div> : <></>}
+                {!selected ? (
+                    <div className="simple-hint simple-attention">
+                        {hasVoices ? "Toca una de las voces para elegirla." : "Todavía no hay ninguna voz. Pulsa «Añadir o cambiar voces»."}
+                    </div>
+                ) : (
+                    <></>
+                )}
             </div>
 
             <div className="simple-card">

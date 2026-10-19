@@ -1977,6 +1977,11 @@ audio::-webkit-media-controls-overlay-enclosure{
     font-size: 0.85rem;
     opacity: 0.8;
 }
+.simple-attention {
+    font-size: 1rem;
+    font-weight: 700;
+    opacity: 1;
+}
 .simple-row {
     display: flex;
     align-items: center;
