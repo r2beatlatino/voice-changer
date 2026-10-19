@@ -45,9 +45,20 @@ def test_quiet_room(speech):
     r = calibrate(noise, speech + np.resize(noise, speech.shape), target="female")
     s = r["settings"]
     assert s["vadThreshold"] in VAD_CANDIDATES and r["measure"]["speechPass"] >= 0.95
-    # the sample speaker talks at about 105 Hz; a female voice sits at about 260 Hz
-    assert 14 <= s["tran"] <= 17
+    # the sample speaker talks at about 105 Hz; a female voice sits at about 280 Hz
+    assert 15 <= s["tran"] <= 18
+    assert s["vadThreshold"] == VAD_CANDIDATES[0]  # nothing in a quiet room to keep out
     assert "low_rumble" not in r["tips"]
+
+
+def test_a_semitone_off_the_octave_snaps_to_it(speech):
+    noise = np.random.default_rng(1).standard_normal(16000 * 10).astype(np.float32) * 3e-4
+
+    def pitch(x):
+        return np.full(500, 147.7)  # ben's speaking pitch: 11.1 semitones below 280 Hz
+
+    r = calibrate(noise, speech + np.resize(noise, speech.shape), target="female", pitch_fn=pitch)
+    assert r["settings"]["tran"] == 12
 
 
 def test_rumble_turns_on_strong_and_says_why(speech):

@@ -177,6 +177,13 @@ export const CalibrationDialog = () => {
             setApplied(true);
         });
 
+    // after listening the user may want it a bit higher or lower; Aplicar sends it again
+    const nudgeTran = (delta: number) => {
+        if (!result || result.settings.tran === undefined) return;
+        setResult({ ...result, settings: { ...result.settings, tran: result.settings.tran + delta } });
+        setApplied(false);
+    };
+
     const listen = () =>
         run("convert", async () => {
             const voice = voiceRef.current!;
@@ -258,7 +265,21 @@ export const CalibrationDialog = () => {
                             <li>
                                 VAD: {st.vadThreshold} (deja pasar el {Math.round(m.speechPass * 100)}% de tu voz)
                             </li>
-                            {st.tran !== undefined ? <li>Tono (TUNE): {st.tran > 0 ? `+${st.tran}` : st.tran}</li> : <></>}
+                            {st.tran !== undefined ? (
+                                <li>
+                                    Tono (TUNE): {st.tran > 0 ? `+${st.tran}` : st.tran}{" "}
+                                    <span className="config-sub-area-buttons" style={{ display: "inline-flex" }}>
+                                        <span className="config-sub-area-button" onClick={() => nudgeTran(-1)}>
+                                            más grave
+                                        </span>
+                                        <span className="config-sub-area-button" onClick={() => nudgeTran(1)}>
+                                            más agudo
+                                        </span>
+                                    </span>
+                                </li>
+                            ) : (
+                                <></>
+                            )}
                         </ul>
                     </div>
                     {r.tips.length > 0 ? (

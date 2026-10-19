@@ -32,8 +32,9 @@ one click: Casa tranquila (GTCRN, VAD 0.3), Con ruido (Strong, VAD 0.4), Mucho r
 
 The "Asistente" button (next to Perfil) records 10 s of the room and 15 s of the user reading,
 and `POST /calibrate` (`Calibration.py`) suggests the settings: Strong when the voice is less than
-35 dB above the noise, the highest VAD threshold that still passes 95% of the speech, and a pitch
-shift from the user's median pitch to a typical female (260 Hz) or male (125 Hz) voice. It also
+35 dB above the noise, the lowest VAD threshold (0.3-0.5) that keeps the room out (measured
+behind the denoiser it recommends), and a pitch shift from the user's median pitch to a typical
+female (280 Hz) or male (125 Hz) voice, rounded to the octave when within a semitone of it. It also
 flags a quiet or clipping mic, low rumble and speech-like background noise.
 `POST /convert_clip` converts the reading block by block so it can be heard before and after.
 

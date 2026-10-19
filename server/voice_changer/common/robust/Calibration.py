@@ -17,10 +17,13 @@ from voice_changer.common.robust.InputConditioner import InputConditioner, next_
 SR = 16000
 CHUNK = 1600  # 100 ms, about what the gate sees per block at the default chunk size
 VAD_HANGOVER_MS = 500
-VAD_CANDIDATES = [0.5, 0.4, 0.3, 0.2]  # highest first: the first that keeps the speech wins
-MIN_SPEECH_PASS = 0.95
+# Lowest first: the first that keeps the room out wins. A higher threshold than that only
+# risks cutting soft word onsets and endings, which a speech mask of loud chunks can't see.
+VAD_CANDIDATES = [0.3, 0.4, 0.5]
+MAX_NOISE_PASS = 0.05
+MIN_SPEECH_PASS = 0.9
 # typical speaking pitch of the target voice, used to suggest a pitch shift
-TARGET_PITCH_HZ = {"female": 260.0, "male": 125.0}
+TARGET_PITCH_HZ = {"female": 280.0, "male": 125.0}
 # Strong when the room is this noisy; on a real rumble recording it removed about 20 dB more
 STRONG_BELOW_SNR_DB = 35.0
 STRONG_ABOVE_NOISE_DB = -50.0
@@ -71,23 +74,26 @@ def _gate_pass(probs: np.ndarray, mask: np.ndarray, threshold: float) -> float:
     return float(np.mean(np.array(opened)[mask]))
 
 
-def _condition(conditioner: InputConditioner, x: np.ndarray):
+def _condition(conditioner: InputConditioner, x: np.ndarray, strong: bool = False):
     """Speech probability per chunk, and the denoised audio."""
     conditioner.reset()
     probs, audio = [], []
     for c in _chunks(x):
-        r = conditioner.process(c, denoise=True, denoise_strength=1.0, vad=True, vad_threshold=1.1, vad_hangover_ms=0)
+        r = conditioner.process(c, denoise=True, denoise_strength=1.0, vad=True, vad_threshold=1.1, vad_hangover_ms=0, strong=strong)
         probs.append(r.speech_prob)
         audio.append(r.audio)
     return np.array(probs), (np.concatenate(audio) if audio else np.zeros(0, dtype=np.float32))
 
 
-def calibrate(noise: np.ndarray, voice: np.ndarray, target: str = "keep", strong_available: bool = True, pitch_fn=estimate_pitch) -> dict:
+def calibrate(noise: np.ndarray, voice: np.ndarray, target: str = "keep", strong_available: bool = True, pitch_fn=estimate_pitch, conditioner: InputConditioner | None = None) -> dict:
+    """conditioner: one with DeepFilterNet3 already loaded (the voice's own, while live
+    conversion is stopped) lets the VAD be measured behind Strong, as it will run."""
     noise = noise.astype(np.float32)
     voice = voice.astype(np.float32)
     tips: list[str] = []
 
-    conditioner = InputConditioner(preload_strong=False)
+    if conditioner is None:
+        conditioner = InputConditioner(preload_strong=False)
     voice_probs, voice_clean = _condition(conditioner, voice)
     noise_probs, noise_clean = _condition(conditioner, noise)
 
@@ -127,17 +133,22 @@ def calibrate(noise: np.ndarray, voice: np.ndarray, target: str = "keep", strong
 
     strong = strong_available and (snr < STRONG_BELOW_SNR_DB or _db(noise_rms) > STRONG_ABOVE_NOISE_DB)
 
-    threshold, voice_pass = VAD_CANDIDATES[-1], 0.0
+    if strong and conditioner.strong_denoiser is not None:
+        voice_probs, _ = _condition(conditioner, voice, strong=True)
+        noise_probs, _ = _condition(conditioner, noise, strong=True)
+    everything = np.ones(noise_probs.shape[0], dtype=bool)
+    threshold = VAD_CANDIDATES[-1]
     for t in VAD_CANDIDATES:
-        voice_pass = _gate_pass(voice_probs, speech, t)
-        if voice_pass >= MIN_SPEECH_PASS:
+        if _gate_pass(noise_probs, everything, t) <= MAX_NOISE_PASS:
             threshold = t
             break
-    else:
-        tips.append("vad_cuts")
-    noise_pass = _gate_pass(noise_probs, np.ones(noise_probs.shape[0], dtype=bool), threshold)
-    if noise_pass > 0.3:
+    voice_pass = _gate_pass(voice_probs, speech, threshold)
+    noise_pass = _gate_pass(noise_probs, everything, threshold)
+    if noise_pass > MAX_NOISE_PASS:
         tips.append("speech_like_noise")
+    if voice_pass < MIN_SPEECH_PASS:
+        tips.append("vad_cuts")
+    conditioner.reset()
 
     settings = {"denoise": 1, "denoiseStrength": 1.0, "denoiseStrong": 1 if strong else 0, "vad": 1, "vadThreshold": threshold}
 
@@ -145,7 +156,11 @@ def calibrate(noise: np.ndarray, voice: np.ndarray, target: str = "keep", strong
     voiced = f0[f0 > 0]
     user_pitch = float(np.median(voiced)) if voiced.size >= 50 else 0.0
     if target in TARGET_PITCH_HZ and user_pitch > 0:
-        settings["tran"] = int(np.clip(round(12 * np.log2(TARGET_PITCH_HZ[target] / user_pitch)), -24, 24))
+        tran = round(12 * np.log2(TARGET_PITCH_HZ[target] / user_pitch))
+        # a semitone off the octave: take the octave, which is what tuning by ear landed on
+        if abs(abs(tran) - 12) <= 1:
+            tran = 12 if tran > 0 else -12
+        settings["tran"] = int(np.clip(tran, -24, 24))
     elif target in TARGET_PITCH_HZ:
         tips.append("no_pitch")
 

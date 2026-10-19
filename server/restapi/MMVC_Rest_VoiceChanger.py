@@ -104,11 +104,15 @@ class MMVC_Rest_VoiceChanger:
             noise = resampy.resample(_decode_pcm(req.noise), req.sampleRate, 16000)
             voice = resampy.resample(_decode_pcm(req.voice), req.sampleRate, 16000)
             pitch_fn = self._pitch_fn() or estimate_pitch
-            try:
-                result = calibrate(noise, voice, req.target, importlib.util.find_spec("df") is not None, pitch_fn)
-            except Exception:
-                logger.warning(f"[Calibration] model pitch extractor failed, using YIN: {traceback.format_exc()}")
-                result = calibrate(noise, voice, req.target, importlib.util.find_spec("df") is not None, estimate_pitch)
+            strong_available = importlib.util.find_spec("df") is not None
+            # the voice's own front end has DeepFilterNet3 loaded, so the VAD is measured behind it
+            conditioner = getattr(getattr(self.voiceChangerManager, "voiceChangerModel", None), "inputConditioner", None)
+            with self.tlock:
+                try:
+                    result = calibrate(noise, voice, req.target, strong_available, pitch_fn, conditioner)
+                except Exception:
+                    logger.warning(f"[Calibration] model pitch extractor failed, using YIN: {traceback.format_exc()}")
+                    result = calibrate(noise, voice, req.target, strong_available, estimate_pitch, conditioner)
             return JSONResponse(content=jsonable_encoder(result))
         except Exception as e:
             logger.error(traceback.format_exc())
