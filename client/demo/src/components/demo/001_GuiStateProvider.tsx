@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useState, useRef } from "react";
 import { ReactNode } from "react";
 import { useAppRoot } from "../../001_provider/001_AppRootProvider";
 import { StateControlCheckbox, useStateControlCheckbox } from "../../hooks/useStateControlCheckbox";
+import { getUiMode } from "./noiseProfiles";
 import { useAppState } from "../../001_provider/001_AppStateProvider";
 
 export const OpenServerControlCheckbox = "open-server-control-checkbox";
@@ -310,7 +311,10 @@ export const GuiStateProvider = ({ children }: Props) => {
             // }
 
             document.getElementById("dialog")?.classList.add("dialog-container-show");
-            showStartingNoticeCheckbox.updateState(true);
+            // the simple screen starts on its own button and links the credits instead
+            if (getUiMode() != "simple") {
+                showStartingNoticeCheckbox.updateState(true);
+            }
             document.getElementById("dialog2")?.classList.add("dialog-container-show");
         };
         setTimeout(show);

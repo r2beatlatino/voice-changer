@@ -4,7 +4,10 @@ import { useGuiState } from "../001_GuiStateProvider";
 import { useMessageBuilder } from "../../../hooks/useMessageBuilder";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 
-export type ModelSlotAreaProps = {};
+export type ModelSlotAreaProps = {
+    // the simple screen: full names, no sort buttons, and a plain "add or change voices" button
+    simple?: boolean;
+};
 
 const SortTypes = {
     slot: "slot",
@@ -12,7 +15,7 @@ const SortTypes = {
 } as const;
 export type SortTypes = (typeof SortTypes)[keyof typeof SortTypes];
 
-export const ModelSlotArea = (_props: ModelSlotAreaProps) => {
+export const ModelSlotArea = (props: ModelSlotAreaProps) => {
     const { serverSetting, getInfo, webEdition } = useAppState();
     const guiState = useGuiState();
     const messageBuilderState = useMessageBuilder();
@@ -39,7 +42,7 @@ export const ModelSlotArea = (_props: ModelSlotAreaProps) => {
                     return null;
                 }
                 const tileContainerClass = x.slotIndex == serverSetting.serverSetting.modelSlotIndex ? "model-slot-tile-container-selected" : "model-slot-tile-container";
-                const name = x.name.length > 8 ? x.name.substring(0, 7) + "..." : x.name;
+                const name = props.simple || x.name.length <= 8 ? x.name : x.name.substring(0, 7) + "...";
 
                 const modelDir = x.slotIndex == "Beatrice-JVS" ? "model_dir_static" : serverSetting.serverSetting.voiceChangerParams.model_dir;
                 const icon = x.iconFile.length > 0 ? modelDir + "/" + x.slotIndex + "/" + x.iconFile.split(/[\/\\]/).pop() : "./assets/icons/human.png";
@@ -76,7 +79,7 @@ export const ModelSlotArea = (_props: ModelSlotAreaProps) => {
                 );
             })
             .filter((x) => x != null);
-    }, [serverSetting.serverSetting.modelSlots, serverSetting.serverSetting.modelSlotIndex, sortType]);
+    }, [serverSetting.serverSetting.modelSlots, serverSetting.serverSetting.modelSlotIndex, sortType, props.simple]);
 
     const modelSlotArea = useMemo(() => {
         const onModelSlotEditClicked = () => {
@@ -84,6 +87,20 @@ export const ModelSlotArea = (_props: ModelSlotAreaProps) => {
         };
         const sortSlotByIdClass = sortType == "slot" ? "model-slot-sort-button-active" : "model-slot-sort-button";
         const sortSlotByNameClass = sortType == "name" ? "model-slot-sort-button-active" : "model-slot-sort-button";
+        if (props.simple) {
+            return (
+                <div className="model-slot-area">
+                    <div className="model-slot-panel">
+                        <div className="model-slot-tiles-container">{modelTiles}</div>
+                    </div>
+                    <div className="simple-buttons">
+                        <div className="simple-button" onClick={onModelSlotEditClicked}>
+                            Añadir o cambiar voces
+                        </div>
+                    </div>
+                </div>
+            );
+        }
         return (
             <div className="model-slot-area">
                 <div className="model-slot-panel">
@@ -114,7 +131,7 @@ export const ModelSlotArea = (_props: ModelSlotAreaProps) => {
                 </div>
             </div>
         );
-    }, [modelTiles, sortType]);
+    }, [modelTiles, sortType, props.simple]);
 
     if (webEdition) {
         return <></>;

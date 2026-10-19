@@ -5,9 +5,12 @@ import { useGuiState } from "../001_GuiStateProvider";
 import { AUDIO_ELEMENT_FOR_PLAY_MONITOR, AUDIO_ELEMENT_FOR_PLAY_RESULT, AUDIO_ELEMENT_FOR_TEST_CONVERTED, AUDIO_ELEMENT_FOR_TEST_CONVERTED_ECHOBACK, INDEXEDDB_KEY_AUDIO_MONITR, INDEXEDDB_KEY_AUDIO_OUTPUT } from "../../../const";
 import { isDesktopApp } from "../../../const";
 
-export type DeviceAreaProps = {};
+export type DeviceAreaProps = {
+    // the simple screen: devices and monitor gain only
+    simple?: boolean;
+};
 
-export const DeviceArea = (_props: DeviceAreaProps) => {
+export const DeviceArea = (props: DeviceAreaProps) => {
     const { setting, serverSetting, audioContext, setAudioOutputElementId, setAudioMonitorElementId, initializedRef, setVoiceChangerClientSetting, startOutputRecording, stopOutputRecording, webEdition } = useAppState();
     const { isConverting, audioInputForGUI, inputAudioDeviceInfo, setAudioInputForGUI, fileInputEchoback, setFileInputEchoback, setAudioOutputForGUI, setAudioMonitorForGUI, audioOutputForGUI, audioMonitorForGUI, outputAudioDeviceInfo, shareScreenEnabled, setShareScreenEnabled, reloadDeviceInfo } = useGuiState();
     const [inputHostApi, setInputHostApi] = useState<string>("ALL");
@@ -831,7 +834,7 @@ export const DeviceArea = (_props: DeviceAreaProps) => {
     return (
         <div className="config-sub-area">
             {deviceModeRow}
-            {sampleRateRow}
+            {props.simple ? <></> : sampleRateRow}
             {clientAudioInputRow}
             {serverAudioInputRow}
             {audioInputMediaRow}
@@ -842,7 +845,7 @@ export const DeviceArea = (_props: DeviceAreaProps) => {
             {serverMonitorRow}
             {monitorGainControl}
 
-            {outputRecorderRow}
+            {props.simple ? <></> : outputRecorderRow}
             <audio hidden id={AUDIO_ELEMENT_FOR_PLAY_RESULT}></audio>
             <audio hidden id={AUDIO_ELEMENT_FOR_PLAY_MONITOR}></audio>
         </div>

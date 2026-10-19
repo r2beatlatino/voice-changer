@@ -30,6 +30,15 @@ export const SimpleScreen = () => {
     }, [startAfterInit]);
 
     const onStart = async () => {
+        setWarning("");
+        if (s.enableServerAudio == 0 && ["none", "-1", ""].includes(guiState.audioInputForGUI)) {
+            setWarning("No hay micrófono elegido. Elígelo abajo, en «Micrófono y salida» → input.");
+            return;
+        }
+        if (s.enableServerAudio == 1 && s.serverInputDeviceId == -1) {
+            setWarning("No hay micrófono elegido. Elígelo abajo, en «Micrófono y salida» → input.");
+            return;
+        }
         if (s.enableServerAudio == 0) {
             if (!initializedRef.current) {
                 while (!initializedRef.current) {
@@ -56,6 +65,18 @@ export const SimpleScreen = () => {
 
     const profile = currentNoiseProfile(s);
     const on = guiState.isConverting;
+    // until the first /info arrives the settings are the client's defaults, not the user's
+    const loaded = s.voiceChangerParams.model_dir != "";
+    const [warning, setWarning] = useState<string>("");
+
+    if (!loaded) {
+        return (
+            <div className="simple-screen">
+                <div className="simple-title">Cambiador de voz</div>
+                <div className="simple-hint">Conectando con el servidor…</div>
+            </div>
+        );
+    }
 
     return (
         <div className="simple-screen">
@@ -69,11 +90,22 @@ export const SimpleScreen = () => {
                     Modo avanzado
                 </div>
             </div>
+            <div className="simple-credits">
+                Basado en{" "}
+                <a href="https://github.com/w-okada/voice-changer" target="_blank" rel="noopener noreferrer">
+                    w-okada voice-changer
+                </a>{" "}
+                (
+                <a href="https://github.com/w-okada/voice-changer/blob/master/LICENSE-NOTICE" target="_blank" rel="noopener noreferrer">
+                    licencias
+                </a>
+                )
+            </div>
 
             <div className="simple-card">
                 <div className="simple-card-title">1. Elige una voz</div>
-                <ModelSlotArea></ModelSlotArea>
-                {!selected ? <div className="simple-hint">Todavía no hay ninguna voz. Pulsa el lápiz («edit») para añadir una.</div> : <></>}
+                <ModelSlotArea simple={true}></ModelSlotArea>
+                {loaded && !selected ? <div className="simple-hint">Todavía no hay ninguna voz. Pulsa «Añadir o cambiar voces».</div> : <></>}
             </div>
 
             <div className="simple-card">
@@ -81,7 +113,7 @@ export const SimpleScreen = () => {
                 <div className={`simple-power ${on ? "simple-power-on" : ""}`} onClick={on ? onStop : onStart}>
                     {on ? "Apagar" : "Encender"}
                 </div>
-                <div className="simple-hint">{on ? `Convirtiendo tu voz${selected ? ` en «${selected.name}»` : ""}.` : "Apagado: tu voz no se está convirtiendo."}</div>
+                <div className="simple-hint">{warning ? warning : on ? `Convirtiendo tu voz${selected ? ` en «${selected.name}»` : ""}.` : "Apagado: tu voz no se está convirtiendo."}</div>
             </div>
 
             <div className="simple-card">
@@ -134,7 +166,9 @@ export const SimpleScreen = () => {
             <div className="simple-card">
                 <div className="simple-card-title">Micrófono y salida</div>
                 <div className="simple-hint">Elige tu micrófono en «input» y dónde quieres oír o enviar la voz convertida en «output».</div>
-                <DeviceArea></DeviceArea>
+                <div className="config-area simple-devices">
+                    <DeviceArea simple={true}></DeviceArea>
+                </div>
             </div>
         </div>
     );
