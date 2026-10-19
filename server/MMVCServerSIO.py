@@ -272,7 +272,9 @@ if __name__ == "__main__":
             logger.error(f"[Voice Changer] Web Server(https) Launch Exception, {e}")
 
     else:
-        p = mp.Process(name="p", target=localServer, args=(args.logLevel,), daemon=True)
+        # not daemon: on Windows the launcher may finish right away (native client missing) and a
+        # daemon child would be killed with it; _exit_with_parent covers a killed launcher instead
+        p = mp.Process(name="p", target=localServer, args=(args.logLevel,))
         p.start()
         try:
             if sys.platform.startswith("win"):
