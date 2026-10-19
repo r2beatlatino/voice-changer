@@ -31,6 +31,12 @@ static class Launcher
 
     [DllImport("user32.dll")]
     static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern IntPtr FindWindow(string cls, string title);
+    [DllImport("user32.dll")]
+    static extern bool ShowWindow(IntPtr hwnd, int cmd);
+    [DllImport("user32.dll")]
+    static extern bool SetForegroundWindow(IntPtr hwnd);
 
     [STAThread]
     static void Main(string[] args)
@@ -47,7 +53,15 @@ static class Launcher
         {
             if (!first)
             {
-                // ya está en marcha: solo abrir otra ventana
+                // ya está en marcha: traer su ventana al frente. Una segunda ventana con la misma
+                // conversión se pelearía con la primera al cambiar de voz.
+                IntPtr hwnd = FindWindow(null, "Cambiador de voz");
+                if (hwnd != IntPtr.Zero)
+                {
+                    ShowWindow(hwnd, 9);  // SW_RESTORE
+                    SetForegroundWindow(hwnd);
+                    return;
+                }
                 int p;
                 if (File.Exists(PortFile) && int.TryParse(File.ReadAllText(PortFile).Trim(), out p)) OpenWindow(p, false);
                 return;

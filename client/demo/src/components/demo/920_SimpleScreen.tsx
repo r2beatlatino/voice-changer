@@ -9,7 +9,7 @@ import { NOISE_PROFILES, currentNoiseProfile, noiseProfileValues, setUiMode } fr
 // the advanced screen, one click away.
 
 export const SimpleScreen = () => {
-    const { serverSetting, initializedRef, start, stop } = useAppState();
+    const { serverSetting, initializedRef, start, stop, audioContext } = useAppState();
     const guiState = useGuiState();
     const s = serverSetting.serverSetting;
     const update = serverSetting.updateServerSettings;
@@ -74,6 +74,19 @@ export const SimpleScreen = () => {
     const loaded = s.voiceChangerParams.model_dir != "";
     const [warning, setWarning] = useState<string>("");
 
+    if (!audioContext) {
+        // sound can only start after a click; the click (mousedown anywhere) creates the audio
+        // context, and the connection to the server is set up after it
+        return (
+            <div className="simple-screen">
+                <div className="simple-title">Cambiador de voz</div>
+                <div className="simple-card">
+                    <div className="simple-power">Empezar</div>
+                    <div className="simple-hint">Pulsa «Empezar» para preparar el micrófono y el sonido.</div>
+                </div>
+            </div>
+        );
+    }
     if (!loaded) {
         return (
             <div className="simple-screen">

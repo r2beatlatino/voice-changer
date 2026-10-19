@@ -72,7 +72,7 @@ export const ModelSlotArea = (props: ModelSlotAreaProps) => {
                 };
 
                 return (
-                    <div key={index} className={tileContainerClass} onClick={clickAction}>
+                    <div key={index} className={tileContainerClass} onClick={clickAction} title={x.name}>
                         <div className="model-slot-tile-icon-div">{iconElem}</div>
                         <div className="model-slot-tile-dscription">{name}</div>
                     </div>
