@@ -9,7 +9,7 @@ class RVCSettings:
     f0Detector: str = "rmvpe_onnx"  # dio or harvest
     tran: int = 12
     silentThreshold: float = 0.00001
-    extraConvertSize: int = 1024 * 4
+    extraConvertSize: int = 1024 * 64  # less context made Whisper misread about 1 word in 5; no added latency
 
     indexRatio: float = 0
     protect: float = 0.5

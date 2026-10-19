@@ -1,4 +1,4 @@
-# Noise-robust front end (RVC)
+# Noise-robust front end (RVC and LLVC)
 
 Cleans the microphone signal before RVC turns it into a voice:
 
@@ -10,12 +10,17 @@ Everything here runs on the CPU (about 8% of one core in total), so it does not 
 GPU time away from the conversion. It works in both client-audio and server-audio mode;
 the browser's Sup1/Sup2 switches only apply to client audio.
 
+LLVC uses the same front end and settings, except that `denoiseStrong` defaults to on: the
+pretrained LLVC model loses voicing on noisy input, which sounds choppy, and DeepFilterNet3 in
+front of it fixed that on a real recording (Whisper word error rate 2.3%). LLVC keeps running
+while the VAD gate is closed (it is a streaming model), it just hears silence.
+
 | Setting (UI) | Key | Default | What it does |
 |---|---|---|---|
 | Denoise checkbox | `denoise` | on | 85 Hz high-pass (removes fan/AC/desk rumble) + GTCRN speech enhancement. Adds 32 ms of latency |
 | Strong | `denoiseStrong` | off | Use DeepFilterNet3 instead of GTCRN: about 9 dB more noise removed on a real rumble recording, about 9 ms per block on an RTX 3090 (13-18 ms on CPU). Loads on first use (a short gap in the audio); falls back to GTCRN if `deepfilternet` or its weights are missing |
 | Denoise slider | `denoiseStrength` | 1.0 | Mix between raw mic (0) and fully denoised (1). Lower it if your voice sounds thin |
-| VAD checkbox | `vad` | on | Mutes the output, and skips inference, while you are not talking |
+| VAD checkbox | `vad` | on | Mutes the output, and skips inference (RVC), while you are not talking |
 | VAD slider | `vadThreshold` | 0.3 | Speech probability needed to open the gate. Raise it in loud rooms, lower it (or turn VAD off) if words get cut |
 | — | `vadHangoverMs` | 500 | How long the gate stays open after speech stops |
 | F0 Fix | `f0Stabilize` | on | Removes pitch blips, bridges short dropouts and folds octave jumps |

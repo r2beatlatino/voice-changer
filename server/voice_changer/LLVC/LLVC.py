@@ -8,6 +8,7 @@ from data.ModelSlot import LLVCModelSlot
 from mods.log_control import VoiceChangaerLogger
 import numpy as np
 from voice_changer.LLVC.LLVCInferencer import LLVCInferencer
+from voice_changer.common.robust.InputConditioner import InputConditioner
 from voice_changer.ModelSlotManager import ModelSlotManager
 from voice_changer.VoiceChangerParamsManager import VoiceChangerParamsManager
 from voice_changer.utils.Timer import Timer2
@@ -31,9 +32,18 @@ class LLVCSetting:
     crossfade: bool = True
     resample: bool = True
 
+    # noise robustness, same controls as RVC. The pretrained model drops voicing on noisy
+    # input (choppy output), and DeepFilterNet3 in front of it fixed that on a real recording.
+    denoise: int = 1  # 0:off, 1:on
+    denoiseStrength: float = 1.0
+    denoiseStrong: int = 1  # 0:GTCRN, 1:DeepFilterNet3 (falls back to GTCRN without the deepfilternet package)
+    vad: int = 1
+    vadThreshold: float = 0.3
+    vadHangoverMs: int = 500
+
     # 変更可能な変数だけ列挙
-    intData: list[str] = field(default_factory=lambda: [])
-    floatData: list[str] = field(default_factory=lambda: [])
+    intData: list[str] = field(default_factory=lambda: ["denoise", "denoiseStrong", "vad", "vadHangoverMs"])
+    floatData: list[str] = field(default_factory=lambda: ["denoiseStrength", "vadThreshold"])
     strData: list[str] = field(default_factory=lambda: [])
 
 
@@ -80,6 +90,7 @@ class LLVC(VoiceChangerModel):
         self.params = params
         self.slotInfo = slotInfo
         self.modelSlotManager = ModelSlotManager.get_instance(self.params.model_dir)
+        self.inputConditioner = InputConditioner()
 
         # # クロスフェード・リサンプリング設定
         # ## 16Kで出力するモード
@@ -118,6 +129,8 @@ class LLVC(VoiceChangerModel):
         self.out_total = 0
         self.hp_sos = signal.butter(N=5, Wn=48, btype="high", fs=self.processingSampleRate, output="sos")
         self.hp_zi = np.zeros((self.hp_sos.shape[0], 2))
+        self.prevGate = 0.0
+        self.inputConditioner.reset()
 
     def updateSetting(self, key: str, val: Any):
         if key in self.settings.intData:
@@ -183,6 +196,25 @@ class LLVC(VoiceChangerModel):
                 # artefacts at every block boundary
                 waveformFloat = self.in_rs(receivedData)
                 waveformFloat, self.hp_zi = signal.sosfilt(self.hp_sos, waveformFloat, zi=self.hp_zi)
+
+                conditioned = self.inputConditioner.process(
+                    waveformFloat.astype(np.float32),
+                    denoise=self.settings.denoise == 1,
+                    denoise_strength=self.settings.denoiseStrength,
+                    strong=self.settings.denoiseStrong == 1,
+                    vad=self.settings.vad == 1,
+                    vad_threshold=self.settings.vadThreshold,
+                    vad_hangover_ms=self.settings.vadHangoverMs,
+                )
+                waveformFloat = conditioned.audio
+                # the model is streaming, so it keeps running on the gated input instead of being
+                # skipped; a ramp over the block avoids clicks when the gate moves
+                gate, prevGate = conditioned.gate, self.prevGate
+                self.prevGate = gate
+                if gate != prevGate:
+                    waveformFloat = waveformFloat * np.linspace(prevGate, gate, waveformFloat.shape[0], dtype=np.float32)
+                elif gate == 0.0:
+                    waveformFloat = np.zeros_like(waveformFloat)
 
                 # 推論
                 audio1 = self.inferencer.infer(waveformFloat.astype(np.float32))
