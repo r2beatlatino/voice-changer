@@ -146,7 +146,14 @@ export const CalibrationDialog = () => {
         try {
             await f();
         } catch (e) {
-            setError(`${e}`);
+            const name = (e as { name?: string })?.name;
+            if (name == "NotAllowedError") {
+                setError("No tengo permiso para usar el micrófono. Pulsa el candado de la barra de direcciones, pon Micrófono en «Permitir» y vuelve a intentarlo.");
+            } else if (name == "NotFoundError" || name == "OverconstrainedError") {
+                setError("No encuentro el micrófono elegido. Revisa que esté conectado y elegido en AUDIO → input.");
+            } else {
+                setError(`${e}`);
+            }
         } finally {
             setBusy("");
             setCountdown(0);
@@ -210,7 +217,7 @@ export const CalibrationDialog = () => {
         if (step == 0) {
             body = (
                 <>
-                    <div className="dialog-content-part">Te ayudo a ajustar la limpieza del ruido, el VAD y el tono en 2 grabaciones cortas. Usaré el micrófono elegido en «AUDIO IN».</div>
+                    <div className="dialog-content-part">Te ayudo a ajustar la limpieza del ruido, el VAD y el tono en 2 grabaciones cortas. Usaré el micrófono elegido en AUDIO → input.</div>
                     {live ? <div className="dialog-content-part">Primero para la conversión (botón «stop»), porque el asistente necesita el micrófono y el servidor libres.</div> : <></>}
                     <div className="body-button-container body-button-container-space-around">{button("Empezar", () => setStep(1), live)}</div>
                 </>
@@ -331,7 +338,7 @@ export const CalibrationDialog = () => {
                 <div className="dialog-content">
                     {body}
                     {status ? <div className="dialog-content-part">{status}</div> : <></>}
-                    {error ? <div className="dialog-content-part">Algo falló: {error}</div> : <></>}
+                    {error ? <div className="dialog-content-part">{error.startsWith("No ") ? error : `Algo falló: ${error}`}</div> : <></>}
                     <div className="body-button-container body-button-container-space-around">{button("Cerrar", close)}</div>
                 </div>
             </div>
